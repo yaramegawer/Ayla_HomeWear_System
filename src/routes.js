@@ -2,66 +2,81 @@ import React from "react";
 
 // Admin Imports
 import MainDashboard from "views/admin/default";
-import NFTMarketplace from "views/admin/marketplace";
-import Profile from "views/admin/profile";
-import DataTables from "views/admin/tables";
-import RTLDefault from "views/rtl/default";
-
-// Auth Imports
-import SignIn from "views/auth/SignIn";
+import OrdersManagement from "views/admin/orders";
+import CreateOrder from "views/admin/create-order";
+import ProductsManagement from "views/admin/products";
+import InventoryManagement from "views/admin/inventory";
+import ReturnsManagement from "views/admin/returns";
+import DiscountsManagement from "views/admin/discounts";
+import FinanceAnalytics from "views/admin/finance";
 
 // Icon Imports
 import {
-  MdHome,
-  MdOutlineShoppingCart,
-  MdBarChart,
-  MdPerson,
-  MdLock,
+  MdShoppingCart,
+  MdAddShoppingCart,
+  MdInventory,
+  MdAssignmentReturn,
+  MdLocalOffer,
+  MdAttachMoney,
+  MdDashboard,
 } from "react-icons/md";
 
 const routes = [
   {
-    name: "Main Dashboard",
+    name: "Dashboard",
     layout: "/admin",
     path: "default",
-    icon: <MdHome className="h-6 w-6" />,
-    component: <MainDashboard />,
+    icon: <MdDashboard className="h-6 w-6" />,
+    component: MainDashboard,
   },
   {
-    name: "NFT Marketplace",
+    name: "Orders",
     layout: "/admin",
-    path: "nft-marketplace",
-    icon: <MdOutlineShoppingCart className="h-6 w-6" />,
-    component: <NFTMarketplace />,
-    secondary: true,
+    path: "orders",
+    icon: <MdShoppingCart className="h-6 w-6" />,
+    component: OrdersManagement,
   },
   {
-    name: "Data Tables",
+    name: "Create Order",
     layout: "/admin",
-    icon: <MdBarChart className="h-6 w-6" />,
-    path: "data-tables",
-    component: <DataTables />,
+    path: "create-order",
+    icon: <MdAddShoppingCart className="h-6 w-6" />,
+    component: CreateOrder,
   },
   {
-    name: "Profile",
+    name: "Products",
     layout: "/admin",
-    path: "profile",
-    icon: <MdPerson className="h-6 w-6" />,
-    component: <Profile />,
+    path: "products",
+    icon: <MdInventory className="h-6 w-6" />,
+    component: ProductsManagement,
   },
   {
-    name: "Sign In",
-    layout: "/auth",
-    path: "sign-in",
-    icon: <MdLock className="h-6 w-6" />,
-    component: <SignIn />,
+    name: "Inventory",
+    layout: "/admin",
+    path: "inventory",
+    icon: <MdInventory className="h-6 w-6" />,
+    component: InventoryManagement,
   },
   {
-    name: "RTL Admin",
-    layout: "/rtl",
-    path: "rtl",
-    icon: <MdHome className="h-6 w-6" />,
-    component: <RTLDefault />,
+    name: "Returns",
+    layout: "/admin",
+    path: "returns",
+    icon: <MdAssignmentReturn className="h-6 w-6" />,
+    component: ReturnsManagement,
+  },
+  {
+    name: "Discounts",
+    layout: "/admin",
+    path: "discounts",
+    icon: <MdLocalOffer className="h-6 w-6" />,
+    component: DiscountsManagement,
+  },
+  {
+    name: "Finance",
+    layout: "/admin",
+    path: "finance",
+    icon: <MdAttachMoney className="h-6 w-6" />,
+    component: FinanceAnalytics,
   },
 ];
 export default routes;
