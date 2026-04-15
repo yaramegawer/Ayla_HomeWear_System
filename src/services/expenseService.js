@@ -30,7 +30,7 @@ export const getAllExpenses = async (params = {}) => {
   Object.keys(params).forEach(key => {
     if (params[key]) searchParams.append(key, params[key]);
   });
-  
+
   const response = await fetch(`${BASE_URL}?${searchParams.toString()}`, {
     method: 'GET',
     headers: getHeaders(),
@@ -40,14 +40,14 @@ export const getAllExpenses = async (params = {}) => {
 };
 
 export const updateExpense = async (id, expenseData) => {
-  console.log('=== UPDATE EXPENSE DEBUG ===');
+  ('=== UPDATE EXPENSE DEBUG ===');
   console.log('URL:', `${BASE_URL}/${id}`);
   console.log('Method: PATCH');
   console.log('Headers:', getHeaders());
   console.log('Body being sent:', JSON.stringify(expenseData, null, 2));
   console.log('Body type:', typeof JSON.stringify(expenseData));
   console.log('========================');
-  
+
   const response = await fetch(`${BASE_URL}/${id}`, {
     method: 'PATCH',
     headers: getHeaders(),
