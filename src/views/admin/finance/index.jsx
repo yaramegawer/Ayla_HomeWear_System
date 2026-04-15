@@ -13,7 +13,9 @@ import {
   MdDownload,
   MdAdd,
   MdClose,
-  MdRefresh
+  MdRefresh,
+  MdSwapHoriz,
+  MdAssignment
 } from 'react-icons/md';
 
 const FinanceAnalytics = () => {
@@ -217,6 +219,15 @@ const FinanceAnalytics = () => {
     const d = analyticsData || {};
     const csvData = [
       ['Metric', 'Value'],
+      ['--- Sales Analytics ---', ''],
+      ['Total Sales', (d.totalSales || 0).toFixed(2)],
+      ['Returned Sales', (d.returnedSalesAmount || 0).toFixed(2)],
+      ['Exchanged Sales', (d.exchangedSalesAmount || 0).toFixed(2)],
+      ['Net Sales', (d.netSales || 0).toFixed(2)],
+      ['Sales Efficiency %', d.totalSales > 0 ? ((d.netSales / d.totalSales) * 100).toFixed(1) : '0.0'],
+      ['Return Rate %', d.totalSales > 0 ? ((d.returnedSalesAmount / d.totalSales) * 100).toFixed(1) : '0.0'],
+      ['Exchange Rate %', d.totalSales > 0 ? ((d.exchangedSalesAmount / d.totalSales) * 100).toFixed(1) : '0.0'],
+      ['--- Profit Analytics ---', ''],
       ['Delivered Orders Profit', (d.deliveredOrdersProfit || 0).toFixed(2)],
       ['Total Expenses', (d.totalExpenses || computedTotalExpenses || 0).toFixed(2)],
       ['Net Profit', (d.finalProfit || 0).toFixed(2)],
@@ -234,6 +245,19 @@ const FinanceAnalytics = () => {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  // Sales data
+  const totalSales = analyticsData?.totalSales ?? 0;
+  const returnedSalesAmount = analyticsData?.returnedSalesAmount ?? 0;
+  const exchangedSalesAmount = analyticsData?.exchangedSalesAmount ?? 0;
+  const netSales = analyticsData?.netSales ?? 0;
+
+  // Sales computed metrics
+  const salesReduction = returnedSalesAmount + exchangedSalesAmount;
+  const salesEfficiency = totalSales > 0 ? (netSales / totalSales * 100) : 0;
+  const returnRate = totalSales > 0 ? (returnedSalesAmount / totalSales * 100) : 0;
+  const exchangeRate = totalSales > 0 ? (exchangedSalesAmount / totalSales * 100) : 0;
+
+  // Profit data
   const deliveredOrdersProfit = analyticsData?.deliveredOrdersProfit ?? 0;
   const totalExpenses = analyticsData?.totalExpenses ?? computedTotalExpenses;
   const finalProfit = analyticsData?.finalProfit ?? (deliveredOrdersProfit - totalExpenses);
@@ -245,7 +269,7 @@ const FinanceAnalytics = () => {
       <div className="mb-6 flex justify-between items-center flex-wrap gap-y-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Finance & Analytics</h1>
-          <p className="text-gray-500 text-sm">Simplified profit overview based on delivered orders</p>
+          <p className="text-gray-500 text-sm">Comprehensive sales & profit overview with returns tracking</p>
         </div>
         <div className="flex space-x-3 items-center flex-wrap gap-y-3">
           <div className="flex items-center space-x-2 bg-white border border-gray-300 rounded-lg px-3 shadow-sm h-10 w-fit">
@@ -302,71 +326,231 @@ const FinanceAnalytics = () => {
         </div>
       ) : (
         <>
-          {/* ── 4 Main Metric Cards ─────────────────────────────────────── */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-
-            {/* Card 1 – Delivered Orders Profit */}
-            <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-3 rounded-xl ${deliveredOrdersProfit >= 0 ? 'bg-emerald-100' : 'bg-red-100'}`}>
-                  <MdTrendingUp className={`h-6 w-6 ${deliveredOrdersProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} />
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* ── SALES ANALYTICS SECTION ─────────────────────────────────── */}
+          {/* ══════════════════════════════════════════════════════════════ */}
+          <div className="mb-10">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-600">
+                  <MdAssignment className="h-5 w-5 text-white" />
                 </div>
-              </div>
-              <p className="text-sm font-medium text-gray-500 mb-1">Delivered Orders Profit</p>
-              <p className={`text-3xl font-bold ${deliveredOrdersProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {formatCurrency(deliveredOrdersProfit)}
-              </p>
-              <p className="text-xs text-gray-400 mt-2">Selling price − buying price of delivered orders</p>
-            </div>
-
-            {/* Card 2 – Total Expenses */}
-            <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 rounded-xl bg-orange-100">
-                  <MdReceipt className="h-6 w-6 text-orange-600" />
-                </div>
-              </div>
-              <p className="text-sm font-medium text-gray-500 mb-1">Total Expenses</p>
-              <p className="text-3xl font-bold text-orange-600">
-                {formatCurrency(totalExpenses)}
-              </p>
-              <p className="text-xs text-gray-400 mt-2">Sum of all recorded expenses</p>
-            </div>
-
-            {/* Card 3 – Net Profit (highlighted) */}
-            <div className={`rounded-2xl shadow-lg p-6 border-2 hover:shadow-xl transition-shadow md:col-span-2
-              ${finalProfit >= 0
-                ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200'
-                : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-3 rounded-xl ${finalProfit >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}>
-                  <MdAttachMoney className="h-7 w-7 text-white" />
-                </div>
-                <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                  finalProfit >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  {finalProfit >= 0 ? 'PROFIT' : 'LOSS'}
-                </span>
-              </div>
-              <p className="text-sm font-medium text-gray-500 mb-1">Net Profit</p>
-              <p className={`text-4xl font-extrabold ${finalProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                {formatCurrency(finalProfit)}
-              </p>
-              <p className="text-xs text-gray-400 mt-2">Delivered orders profit − total expenses</p>
-            </div>
-
-            {/* Card 4 – Delivered Orders Count */}
-            <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-shadow md:col-span-2">
-              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-500 mb-1">Delivered Orders</p>
-                  <p className="text-3xl font-bold text-blue-600">{deliveredOrdersCount}</p>
-                  <p className="text-xs text-gray-400 mt-2">Total orders with delivered status</p>
+                  <h2 className="text-lg font-bold text-gray-900">Sales Analytics</h2>
+                  <p className="text-xs text-gray-400">Revenue tracking with returns & exchanges impact</p>
                 </div>
-                <div className="p-4 rounded-xl bg-blue-100">
-                  <MdLocalShipping className="h-8 w-8 text-blue-600" />
+              </div>
+              {totalSales > 0 && (
+                <span
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full ${
+                    salesEfficiency >= 90
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : salesEfficiency >= 70
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-red-100 text-red-700'
+                  }`}
+                  title="Sales Efficiency: Net Sales / Total Sales"
+                >
+                  {salesEfficiency.toFixed(1)}% Efficiency
+                </span>
+              )}
+            </div>
+
+            {/* Sales Cards 2x2 grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+
+              {/* Card 1 – Total Sales */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-blue-100 group-hover:bg-blue-200 transition-colors">
+                    <MdShoppingCart className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">ALL ORDERS</span>
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Total Sales</p>
+                <p className="text-3xl font-bold text-blue-600">
+                  {formatCurrency(totalSales)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2" title="Sum of itemsPrice from all orders (excluding cancelled)">
+                  All order revenue excluding cancelled
+                </p>
+              </div>
+
+              {/* Card 2 – Returned Sales */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-orange-100 group-hover:bg-orange-200 transition-colors">
+                    <MdTrendingDown className="h-6 w-6 text-orange-600" />
+                  </div>
+                  {totalSales > 0 && (
+                    <span className="text-[10px] font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
+                      {returnRate.toFixed(1)}% of sales
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Returned Sales</p>
+                <p className="text-3xl font-bold text-orange-600">
+                  {formatCurrency(returnedSalesAmount)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2" title="Total itemsPrice from returned orders">
+                  Revenue lost to returns
+                </p>
+              </div>
+
+              {/* Card 3 – Exchanged Sales */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-amber-100 group-hover:bg-amber-200 transition-colors">
+                    <MdSwapHoriz className="h-6 w-6 text-amber-600" />
+                  </div>
+                  {totalSales > 0 && (
+                    <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      {exchangeRate.toFixed(1)}% of sales
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Exchanged Sales</p>
+                <p className="text-3xl font-bold text-amber-600">
+                  {formatCurrency(exchangedSalesAmount)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2" title="Total itemsPrice from exchanged orders">
+                  Revenue impacted by exchanges
+                </p>
+              </div>
+
+              {/* Card 4 – Net Sales */}
+              <div className={`rounded-2xl shadow-lg p-6 border-2 hover:shadow-xl transition-all duration-200 group ${
+                netSales >= 0
+                  ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200'
+                  : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
+              }`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${netSales >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                    <MdTrendingUp className="h-6 w-6 text-white" />
+                  </div>
+                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                    netSales >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {netSales >= 0 ? 'POSITIVE' : 'NEGATIVE'}
+                  </span>
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Net Sales</p>
+                <p className={`text-3xl font-extrabold ${netSales >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {formatCurrency(netSales)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2" title="Total Sales − Returns − Exchanges">
+                  Total Sales − Returns − Exchanges
+                </p>
+              </div>
+            </div>
+
+            {/* Sales Progress Bar: Total Sales → Net Sales */}
+            {totalSales > 0 && (
+              <div className="bg-white rounded-2xl shadow-md p-5 border border-gray-100">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-700">Sales Retention</p>
+                  <p className="text-sm font-bold text-gray-900">{salesEfficiency.toFixed(1)}%</p>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ease-out ${
+                      salesEfficiency >= 90
+                        ? 'bg-gradient-to-r from-emerald-400 to-emerald-600'
+                        : salesEfficiency >= 70
+                          ? 'bg-gradient-to-r from-yellow-400 to-amber-500'
+                          : 'bg-gradient-to-r from-red-400 to-red-600'
+                    }`}
+                    style={{ width: `${Math.max(0, Math.min(100, salesEfficiency))}%` }}
+                  ></div>
+                </div>
+                <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
+                  <span>Deductions: {formatCurrency(salesReduction)}</span>
+                  <span>Net: {formatCurrency(netSales)} of {formatCurrency(totalSales)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* ── PROFIT ANALYTICS SECTION ────────────────────────────────── */}
+          {/* ══════════════════════════════════════════════════════════════ */}
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-2 rounded-lg bg-emerald-600">
+                <MdAttachMoney className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Profit Analytics</h2>
+                <p className="text-xs text-gray-400">Profit calculations based on delivered orders</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+              {/* Card 1 – Delivered Orders Profit */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${deliveredOrdersProfit >= 0 ? 'bg-emerald-100 group-hover:bg-emerald-200' : 'bg-red-100 group-hover:bg-red-200'} transition-colors`}>
+                    <MdTrendingUp className={`h-6 w-6 ${deliveredOrdersProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} />
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Delivered Orders Profit</p>
+                <p className={`text-3xl font-bold ${deliveredOrdersProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {formatCurrency(deliveredOrdersProfit)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">Selling price − buying price of delivered orders</p>
+              </div>
+
+              {/* Card 2 – Total Expenses */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-orange-100 group-hover:bg-orange-200 transition-colors">
+                    <MdReceipt className="h-6 w-6 text-orange-600" />
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Total Expenses</p>
+                <p className="text-3xl font-bold text-orange-600">
+                  {formatCurrency(totalExpenses)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">Sum of all recorded expenses</p>
+              </div>
+
+              {/* Card 3 – Net Profit (highlighted, spans full width) */}
+              <div className={`rounded-2xl shadow-lg p-6 border-2 hover:shadow-xl transition-all duration-200 md:col-span-2
+                ${finalProfit >= 0
+                  ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200'
+                  : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${finalProfit >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                    <MdAttachMoney className="h-7 w-7 text-white" />
+                  </div>
+                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                    finalProfit >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {finalProfit >= 0 ? 'PROFIT' : 'LOSS'}
+                  </span>
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Net Profit</p>
+                <p className={`text-4xl font-extrabold ${finalProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {formatCurrency(finalProfit)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">Delivered orders profit − total expenses</p>
+              </div>
+
+              {/* Card 4 – Delivered Orders Count */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">Delivered Orders</p>
+                    <p className="text-3xl font-bold text-blue-600">{deliveredOrdersCount}</p>
+                    <p className="text-xs text-gray-400 mt-2">Total orders with delivered status</p>
+                  </div>
+                  <div className="p-4 rounded-xl bg-blue-100">
+                    <MdLocalShipping className="h-8 w-8 text-blue-600" />
+                  </div>
                 </div>
               </div>
             </div>
