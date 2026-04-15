@@ -292,8 +292,8 @@ const OrdersManagement = () => {
                       </td>
                       {/* Order status — badge only */}
                       <td className="px-3 py-2 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                          {order.status}
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded ${order.isExchanged ? 'bg-teal-100 text-teal-700' : (STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-700')}`}>
+                          {order.isExchanged ? 'exchanged' : order.status}
                         </span>
                       </td>
                       {/* Source */}
@@ -551,7 +551,9 @@ const OrdersManagement = () => {
                   <p className="text-xs font-semibold text-gray-500 uppercase">Order Info</p>
                   <p className="text-xs text-gray-600"><span className="font-medium">Date:</span> {formatDate(selectedOrder.orderDate || selectedOrder.createdAt)}</p>
                   <p className="text-xs text-gray-600"><span className="font-medium">Source:</span> {selectedOrder.source}</p>
-                  <p className="text-xs text-gray-600"><span className="font-medium">Status:</span> {selectedOrder.status}</p>
+                  <p className="text-xs text-gray-600">
+                    <span className="font-medium">Status:</span> {selectedOrder.isExchanged ? 'Exchanged' : selectedOrder.status}
+                  </p>
                   <p className="text-xs text-gray-600"><span className="font-medium">Payment:</span> {selectedOrder.paymentStatus?.replace('_', ' ')}</p>
                   <p className="text-xs text-gray-600"><span className="font-medium">Deposit Confirmed:</span> {selectedOrder.depositConfirmed ? 'Yes ✓' : 'No'}</p>
                   {selectedOrder.notes && <p className="text-xs text-gray-600"><span className="font-medium">Notes:</span> {selectedOrder.notes}</p>}
