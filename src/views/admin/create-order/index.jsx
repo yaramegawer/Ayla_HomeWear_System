@@ -17,7 +17,7 @@ const STORE_CUSTOMER = {
 };
 
 const CreateOrder = () => {
-  const { products, fetchProducts, pagination } = useProduct();
+  const { products, fetchProducts } = useProduct();
   const { fetchOrders } = useOrder();
 
   const [orderItems, setOrderItems] = useState([]);
@@ -80,7 +80,16 @@ const CreateOrder = () => {
   const addItem = (product) => {
     // default first size/color from product arrays if available
     const defaultSize = Array.isArray(product.size) && product.size.length ? product.size[0] : '';
-    const defaultColor = Array.isArray(product.color) && product.color.length ? product.color[0] : '';
+
+    // Build per-color stock map from colorStock array
+    const colorStockMap = {};
+    if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
+      product.colorStock.forEach(cs => { colorStockMap[cs.color] = cs.stock || 0; });
+    }
+    const availColors = Array.isArray(product.colorStock) && product.colorStock.length > 0
+      ? product.colorStock.map(cs => cs.color)
+      : (Array.isArray(product.color) && product.color.length ? product.color : []);
+    const defaultColor = availColors.length ? availColors[0] : '';
 
     const discount = product.discount || 0;
     const originalPrice = discount > 0 ? product.price / (1 - discount / 100) : product.price;
@@ -97,7 +106,8 @@ const CreateOrder = () => {
       size: defaultSize,
       color: defaultColor,
       availSizes: Array.isArray(product.size) ? product.size : [],
-      availColors: Array.isArray(product.color) ? product.color : [],
+      availColors,
+      colorStockMap,   // { red: 6, blue: 4 }
     }]);
   };
 
@@ -260,6 +270,16 @@ const CreateOrder = () => {
                         {product.stock || 0} left
                       </span>
                     </div>
+                    {/* Per-color stock breakdown */}
+                    {Array.isArray(product.colorStock) && product.colorStock.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {product.colorStock.map((cs, i) => (
+                          <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded capitalize ${cs.stock > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-500'}`}>
+                            {cs.color}: {cs.stock}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -368,18 +388,21 @@ const CreateOrder = () => {
                       <div className="mb-2">
                         <label className="text-xs text-gray-500 block mb-1">Color</label>
                         <div className="flex flex-wrap gap-1">
-                          {item.availColors.map(c => (
-                            <button
-                              key={c}
-                              onClick={() => updateItem(index, 'color', c)}
-                              className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.color === c
-                                ? 'bg-purple-600 text-white border-purple-600'
-                                : 'bg-white text-gray-600 border-gray-200 hover:border-purple-400'
-                                }`}
-                            >
-                              {c}
-                            </button>
-                          ))}
+                          {item.availColors.map(c => {
+                            const colorQty = item.colorStockMap && item.colorStockMap[c] != null ? item.colorStockMap[c] : '?';
+                            return (
+                              <button
+                                key={c}
+                                onClick={() => updateItem(index, 'color', c)}
+                                className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.color === c
+                                  ? 'bg-purple-600 text-white border-purple-600'
+                                  : 'bg-white text-gray-600 border-gray-200 hover:border-purple-400'
+                                  }`}
+                              >
+                                {c} ({colorQty})
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

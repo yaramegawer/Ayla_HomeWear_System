@@ -30,12 +30,7 @@ const StatusBadge = ({ status }) => {
 
 const ReturnsManagement = () => {
   const { orders, loading, fetchOrders } = useOrder();
-  const { products, fetchProducts } = useProduct();
-
-  // Fetch ALL products on mount so the exchange picker has the full catalog
-  React.useEffect(() => {
-    fetchProducts(1, '', '', 'all');
-  }, []);
+  const { products } = useProduct();
 
   const [tab, setTab]         = useState('returns'); // 'returns' | 'exchanges'
   const [search, setSearch]   = useState('');

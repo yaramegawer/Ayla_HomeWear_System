@@ -24,10 +24,7 @@ const InventoryManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   
-  // Handle page change
-  const handlePageChange = (newPage) => {
-    setCurrentPage(newPage);
-  };
+  // Handle page change removed to fix warning
 
   useEffect(() => {
     fetchProducts(1, '', '', 1000);
@@ -120,19 +117,42 @@ const InventoryManagement = () => {
     };
   }, [products]);
 
-  // Handle stock update
+  // Handle stock update — now works with colorStock array
   const handleStockUpdate = async () => {
     if (!selectedProduct || stockUpdateValue === '') return;
 
-    const currentStock = selectedProduct.stock || 0;
-    let newStock;
+    // Build updated colorStock array
+    const existingCS = Array.isArray(selectedProduct.colorStock) && selectedProduct.colorStock.length > 0
+      ? selectedProduct.colorStock
+      : (Array.isArray(selectedProduct.color) ? selectedProduct.color.map(c => ({ color: c, stock: 0 })) : []);
+
+    let updatedCS;
+    const delta = parseInt(stockUpdateValue || 0);
 
     if (updateType === 'add') {
-      newStock = currentStock + parseInt(stockUpdateValue || 0);
+      // Distribute the added stock evenly across colors, remainder to first
+      const perColor = Math.floor(delta / (existingCS.length || 1));
+      const remainder = delta % (existingCS.length || 1);
+      updatedCS = existingCS.map((cs, i) => ({
+        color: cs.color,
+        stock: (cs.stock || 0) + perColor + (i === 0 ? remainder : 0)
+      }));
     } else if (updateType === 'remove') {
-      newStock = Math.max(0, currentStock - parseInt(stockUpdateValue || 0));
+      // Remove proportionally, but don't go below 0
+      const currentTotal = existingCS.reduce((s, cs) => s + (cs.stock || 0), 0);
+      const removeTotal = Math.min(delta, currentTotal);
+      updatedCS = existingCS.map(cs => {
+        const proportion = currentTotal > 0 ? (cs.stock || 0) / currentTotal : 0;
+        return { color: cs.color, stock: Math.max(0, Math.round((cs.stock || 0) - removeTotal * proportion)) };
+      });
     } else {
-      newStock = parseInt(stockUpdateValue || 0);
+      // Set: distribute the new total evenly
+      const perColor = Math.floor(delta / (existingCS.length || 1));
+      const remainder = delta % (existingCS.length || 1);
+      updatedCS = existingCS.map((cs, i) => ({
+        color: cs.color,
+        stock: perColor + (i === 0 ? remainder : 0)
+      }));
     }
 
     try {
@@ -141,10 +161,9 @@ const InventoryManagement = () => {
         price: selectedProduct.price,
         buyPrice: selectedProduct.buyPrice,
         description: selectedProduct.description,
-        stock: newStock,
+        colorStock: updatedCS,
         category: selectedProduct.category,
         season: selectedProduct.season,
-        color: selectedProduct.color,
         size: selectedProduct.size,
         discount: selectedProduct.discount
       };
@@ -368,6 +387,17 @@ const InventoryManagement = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{product.stock}</div>
+                      {/* Per-color breakdown */}
+                      {Array.isArray(product.colorStock) && product.colorStock.length > 0 && (
+                        <div className="mt-1 space-y-0.5">
+                          {product.colorStock.map((cs, i) => (
+                            <div key={i} className="flex items-center gap-1 text-xs">
+                              <span className="text-gray-400 capitalize">{cs.color}:</span>
+                              <span className={cs.stock > 0 ? 'text-green-600 font-medium' : 'text-red-500'}>{cs.stock}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${stockStatus.color}`}>

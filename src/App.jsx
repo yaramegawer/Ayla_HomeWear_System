@@ -16,12 +16,22 @@ const AuthLayout = () => (
 // Admin layout component
 const AdminLayout = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (userData) {
       setUser(JSON.parse(userData));
     }
+    
+    // Auto-close sidebar on resize if > 1200
+    const handleResize = () => {
+      if (window.innerWidth >= 1200) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const handleLogout = () => {
@@ -32,15 +42,25 @@ const AdminLayout = ({ children }) => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
+    <div className="min-h-screen w-full bg-lightPrimary dark:!bg-navy-900 flex overflow-hidden">
+      {/* Overlay for mobile when sidebar is open */}
+      {open && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/50 xl:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+      <Sidebar open={open} onClose={() => setOpen(false)} />
+      
+      {/* Main Content Area */}
+      <div className="h-full w-full flex-1 flex flex-col transition-all xl:ml-[300px] overflow-auto">
         <Navbar 
           brandText="Dashboard" 
           user={user}
           onLogout={handleLogout}
+          onOpenSidenav={() => setOpen(true)}
         />
-        <main className="p-4">
+        <main className="flex-1 p-4 mb-auto">
           {children}
         </main>
       </div>

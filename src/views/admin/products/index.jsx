@@ -14,7 +14,6 @@ const ProductsManagement = () => {
     products,
     loading,
     error,
-    pagination,
     fetchProducts,
     searchAllProducts,
     addProduct,
@@ -37,8 +36,7 @@ const ProductsManagement = () => {
     buyPrice: 0,
     price: 0,
     discount: 0,
-    stock: 0,
-    color: [],
+    colorStock: [],   // [{ color: 'red', stock: 0 }, ...]
     size: [],
     description: '',
     defaultImage: null,
@@ -57,7 +55,7 @@ const ProductsManagement = () => {
     }
   };
 
-  
+
   // Temporary string states for colors and sizes inputs
   const [colorInput, setColorInput] = useState('');
   const [sizeInput, setSizeInput] = useState('');
@@ -105,13 +103,13 @@ const ProductsManagement = () => {
   // Display products filtered locally
   const filteredProducts = useMemo(() => {
     if (!products || !Array.isArray(products)) return [];
-    
+
     return products.filter(product => {
       if (!product || typeof product !== 'object') return false;
-      
+
       const matchCategory = filterCategory === 'all' || product.category === filterCategory;
       const matchSeason = filterSeason === 'all' || product.season === filterSeason;
-      
+
       let matchSearch = true;
       if (searchTerm && searchTerm.trim()) {
         const query = searchTerm.trim().toLowerCase();
@@ -119,7 +117,7 @@ const ProductsManagement = () => {
         const pCode = (product.code || '').toLowerCase();
         matchSearch = pName.includes(query) || pCode.includes(query);
       }
-      
+
       return matchCategory && matchSeason && matchSearch;
     });
   }, [products, searchTerm, filterCategory, filterSeason]);
@@ -159,8 +157,7 @@ const ProductsManagement = () => {
       season: formData.season,
       buyPrice: formData.buyPrice,
       price: formData.price,
-      stock: formData.stock,
-      color: formData.color,
+      colorStock: formData.colorStock,
       size: formData.size
     });
 
@@ -171,7 +168,8 @@ const ProductsManagement = () => {
       if (!formData.name.trim()) errors.name = 'Product name is required';
       if (!formData.buyPrice || formData.buyPrice <= 0) errors.buyPrice = 'Buying price must be greater than 0';
       if (!formData.price || formData.price <= 0) errors.price = 'Price must be greater than 0';
-      if (!formData.color || formData.color.length === 0) errors.color = 'At least one color is required';
+      if (!formData.colorStock || formData.colorStock.length === 0) errors.colorStock = 'At least one color with stock is required';
+      if (formData.colorStock && formData.colorStock.some(cs => !cs.color.trim())) errors.colorStock = 'All color entries must have a name';
       if (!formData.size || formData.size.length === 0) errors.size = 'At least one size is required';
 
       if (!editingProduct) {
@@ -193,8 +191,7 @@ const ProductsManagement = () => {
           buyPrice: parseFloat(formData.buyPrice),
           price: parseFloat(formData.price),
           discount: parseInt(formData.discount) || 0,
-          stock: parseInt(formData.stock),
-          color: formData.color,
+          colorStock: formData.colorStock.map(cs => ({ color: cs.color, stock: parseInt(cs.stock) || 0 })),
           size: formData.size,
           description: formData.description
         };
@@ -213,20 +210,20 @@ const ProductsManagement = () => {
         formDataToSend.append('buyPrice', parseFloat(formData.buyPrice));
         formDataToSend.append('price', parseFloat(formData.price));
         // discount is only set via the update form, not on create
-        formDataToSend.append('stock', parseInt(formData.stock));
         if (formData.description && formData.description.trim() !== '') {
           formDataToSend.append('description', formData.description.trim());
         }
 
-        // Add arrays as individual fields (ensure they're not empty)
-        const colorsToSend = formData.color.length > 0 ? formData.color : ['red']; // Default color if empty
-        const sizesToSend = formData.size.length > 0 ? formData.size : ['M']; // Default size if empty
-
-        // Send arrays as individual fields to ensure proper parsing
-        colorsToSend.forEach((color) => {
-          formDataToSend.append('color[]', color);
+        // Send colorStock using bracket notation so express parses it as an array of objects
+        const colorStockToSend = formData.colorStock.length > 0
+          ? formData.colorStock.map(cs => ({ color: cs.color, stock: parseInt(cs.stock) || 0 }))
+          : [{ color: 'red', stock: 0 }];
+        colorStockToSend.forEach((cs, i) => {
+          formDataToSend.append(`colorStock[${i}][color]`, cs.color);
+          formDataToSend.append(`colorStock[${i}][stock]`, cs.stock);
         });
 
+        const sizesToSend = formData.size.length > 0 ? formData.size : ['M']; // Default size if empty
         sizesToSend.forEach((size) => {
           formDataToSend.append('size[]', size);
         });
@@ -293,8 +290,7 @@ const ProductsManagement = () => {
       buyPrice: 0,
       price: 0,
       discount: 0,
-      stock: 0,
-      color: [],
+      colorStock: [],
       size: [],
       description: '',
       defaultImage: null,
@@ -310,6 +306,26 @@ const ProductsManagement = () => {
   // Edit product
   const handleEdit = (product) => {
     setEditingProduct(product);
+    
+    let existingColorStock = [];
+    if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
+      // Use new schema if present
+      existingColorStock = product.colorStock.map(cs => ({ color: cs.color, stock: cs.stock || 0 }));
+    } else {
+      // Migrate old data: preserve the old stock value
+      const totalStock = product.stock || 0;
+      const oldColors = Array.isArray(product.color) && product.color.length > 0 ? product.color : (totalStock > 0 ? ['default'] : []);
+      
+      if (oldColors.length > 0) {
+        const perColor = Math.floor(totalStock / oldColors.length);
+        const remainder = totalStock % oldColors.length;
+        existingColorStock = oldColors.map((c, i) => ({
+          color: c,
+          stock: perColor + (i === 0 ? remainder : 0)
+        }));
+      }
+    }
+
     setFormData({
       code: product.code,
       name: product.name,
@@ -318,13 +334,12 @@ const ProductsManagement = () => {
       buyPrice: product.buyPrice,
       price: product.price,
       discount: product.discount || 0,
-      stock: product.stock,
-      color: product.color,
+      colorStock: existingColorStock,
       size: product.size,
       description: product.description
     });
-    setColorInput(product.color.join(', '));
-    setSizeInput(product.size.join(', '));
+    setColorInput(existingColorStock.map(cs => cs.color).join(', '));
+    setSizeInput(Array.isArray(product.size) ? product.size.join(', ') : '');
     setShowForm(true);
   };
 
@@ -482,6 +497,17 @@ const ProductsManagement = () => {
                         {product.stock || 0}
                       </span>
                     </div>
+                    {/* Per-color stock breakdown */}
+                    {Array.isArray(product.colorStock) && product.colorStock.length > 0 && (
+                      <div className="mt-1 space-y-0.5">
+                        {product.colorStock.map((cs, i) => (
+                          <div key={i} className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500 capitalize">{cs.color}</span>
+                            <span className={`font-medium ${cs.stock > 0 ? 'text-green-700' : 'text-red-500'}`}>{cs.stock}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex space-x-2">
@@ -564,6 +590,7 @@ const ProductsManagement = () => {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Row 1: Code + Name */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Product Code *</label>
                   <input
@@ -590,13 +617,14 @@ const ProductsManagement = () => {
                   {formErrors.name && <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
                 </div>
 
+                {/* Row 2: Category + Season */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
                   <select
                     required
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className={`w-full px-3 py-2 border ${formErrors.category ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    className={`w-full px-3 py-2 border ${formErrors.category ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                   >
                     {categories.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
@@ -611,7 +639,7 @@ const ProductsManagement = () => {
                     required
                     value={formData.season}
                     onChange={(e) => setFormData({ ...formData, season: e.target.value })}
-                    className={`w-full px-3 py-2 border ${formErrors.season ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    className={`w-full px-3 py-2 border ${formErrors.season ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                   >
                     {seasons.map(season => (
                       <option key={season} value={season}>{season}</option>
@@ -620,19 +648,7 @@ const ProductsManagement = () => {
                   {formErrors.season && <p className="text-red-500 text-xs mt-1">{formErrors.season}</p>}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Quantity *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
-                    className={`w-full px-3 py-2 border ${formErrors.stock ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                  />
-                  {formErrors.stock && <p className="text-red-500 text-xs mt-1">{formErrors.stock}</p>}
-                </div>
-
+                {/* Row 3: Buying Price + Selling Price */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Buying Price *</label>
                   <input
@@ -642,13 +658,13 @@ const ProductsManagement = () => {
                     step="0.01"
                     value={formData.buyPrice}
                     onChange={(e) => setFormData({ ...formData, buyPrice: parseFloat(e.target.value) || 0 })}
-                    className={`w-full px-3 py-2 border ${formErrors.buyPrice ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    className={`w-full px-3 py-2 border ${formErrors.buyPrice ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                   />
                   {formErrors.buyPrice && <p className="text-red-500 text-xs mt-1">{formErrors.buyPrice}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Price *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price *</label>
                   <input
                     type="number"
                     required
@@ -660,7 +676,7 @@ const ProductsManagement = () => {
                   />
                   {formErrors.price && <p className="text-red-500 text-xs mt-1">{formErrors.price}</p>}
                   {editingProduct && (
-                    <div>
+                    <div className="mt-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Discount <span className="text-gray-400 font-normal">(% off selling price)</span>
                       </label>
@@ -688,9 +704,9 @@ const ProductsManagement = () => {
                   )}
                 </div>
 
-
+                {/* Row 4: Images */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Default Image</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Default Image {!editingProduct && '*'}</label>
                   <input
                     type="file"
                     accept="image/*"
@@ -701,7 +717,7 @@ const ProductsManagement = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Images</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Images {!editingProduct && '*'}</label>
                   <input
                     type="file"
                     accept="image/*"
@@ -713,36 +729,77 @@ const ProductsManagement = () => {
                 </div>
               </div>
 
+              {/* Description — full width */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows="3"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  rows="2"
                   placeholder="Product description..."
                 />
               </div>
 
+              {/* Colors & Stock + Sizes — side by side on desktop */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Colors & Stock */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Colors (comma-separated)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Colors & Stock *</label>
+                  <div className="text-xs text-gray-400 mb-2">Comma-separated colors, then set stock for each.</div>
                   <input
                     type="text"
                     value={colorInput}
                     onChange={(e) => setColorInput(e.target.value)}
                     onBlur={() => {
                       const colors = colorInput.split(',').map(c => c.trim()).filter(c => c);
-                      setFormData({ ...formData, color: colors });
+                      // Preserve existing stock values when possible
+                      const existing = formData.colorStock || [];
+                      const updated = colors.map(c => {
+                        const found = existing.find(cs => cs.color.toLowerCase() === c.toLowerCase());
+                        return { color: c, stock: found ? found.stock : 0 };
+                      });
+                      setFormData({ ...formData, colorStock: updated });
                     }}
-                    className={`w-full px-3 py-2 border ${formErrors.color ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
+                    className={`w-full px-3 py-2 border ${formErrors.colorStock ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                     placeholder="red, blue, green"
                   />
-                  {formErrors.color && <p className="text-red-500 text-xs mt-1">{formErrors.color}</p>}
+                  {formErrors.colorStock && <p className="text-red-500 text-xs mt-1">{formErrors.colorStock}</p>}
+
+                {/* Per-color stock inputs - Styled like Sizes tags */}
+                {formData.colorStock.length > 0 && (
+                  <div className="mt-2">
+                    <div className="flex flex-wrap gap-2">
+                      {formData.colorStock.map((cs, idx) => (
+                        <div key={idx} className="flex items-center text-sm bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full font-medium border border-purple-100">
+                          <span className="capitalize mr-2">{cs.color}:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={cs.stock}
+                            onChange={(e) => {
+                              const validStock = Math.max(0, parseInt(e.target.value) || 0);
+                              const updated = [...formData.colorStock];
+                              updated[idx] = { ...updated[idx], stock: validStock };
+                              setFormData({ ...formData, colorStock: updated });
+                            }}
+                            className="w-12 bg-transparent text-purple-900 border-b border-purple-300 focus:outline-none focus:border-purple-600 text-center"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    {/* Total Stock Indicator */}
+                    <div className="mt-2 text-xs text-gray-500 font-medium">
+                      Total Units: <span className="text-purple-700 font-bold">{formData.colorStock.reduce((s, cs) => s + (parseInt(cs.stock) || 0), 0)}</span>
+                    </div>
+                  </div>
+                )}
                 </div>
 
+                {/* Sizes */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sizes (comma-separated)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sizes (comma-separated) *</label>
+                  <div className="text-xs text-gray-400 mb-2">e.g. S, M, L, XL</div>
                   <input
                     type="text"
                     value={sizeInput}
@@ -755,6 +812,14 @@ const ProductsManagement = () => {
                     placeholder="S, M, L, XL"
                   />
                   {formErrors.size && <p className="text-red-500 text-xs mt-1">{formErrors.size}</p>}
+                  {/* Show parsed sizes as tags */}
+                  {formData.size.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {formData.size.map((s, i) => (
+                        <span key={i} className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded-full font-medium">{s}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
