@@ -188,19 +188,49 @@ export const updateProduct = async (id, productData) => {
   try {
     const token = localStorage.getItem('token');
     
+    // Check if productData is FormData (contains images) or regular JSON
+    const isFormData = productData instanceof FormData;
+    
     const response = await fetch(`${BASE_URL}/${id}`, {
       method: 'PUT',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        // Only set Content-Type for JSON, let browser set it for FormData
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       },
-      body: JSON.stringify(productData)
+      body: isFormData ? productData : JSON.stringify(productData)
     });
     
     const data = await response.json();
     
     if (!response.ok) {
       throw new Error(data.message || 'Failed to update product');
+    }
+    
+    return data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Update product images only
+export const updateProductImages = async (id, formData) => {
+  try {
+    const token = localStorage.getItem('token');
+    
+    const response = await fetch(`${BASE_URL}/${id}/images`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // Don't set Content-Type for FormData - browser will set it with boundary
+      },
+      body: formData
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update product images');
     }
     
     return data;

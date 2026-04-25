@@ -6,6 +6,7 @@ import {
   searchProducts,
   createProduct,
   updateProduct,
+  updateProductImages,
   deleteProduct
 } from '../services/productService';
 
@@ -163,6 +164,23 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
+  // Update product images only
+  const updateProductImagesOnly = async (id, formData) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      await updateProductImages(id, formData);
+      // Refresh products list
+      await fetchProducts(pagination.currentPage);
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Delete product
   const removeProduct = async (id) => {
     setLoading(true);
@@ -199,6 +217,7 @@ export const ProductProvider = ({ children }) => {
     searchAllProducts,
     addProduct,
     editProduct,
+    updateProductImagesOnly,
     removeProduct,
     clearError
   };

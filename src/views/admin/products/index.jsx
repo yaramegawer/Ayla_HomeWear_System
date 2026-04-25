@@ -18,6 +18,7 @@ const ProductsManagement = () => {
     searchAllProducts,
     addProduct,
     editProduct,
+    updateProductImagesOnly,
     removeProduct,
     clearError
   } = useProduct();
@@ -77,21 +78,30 @@ const ProductsManagement = () => {
     setCurrentPage(1);
   }, [searchTerm, filterCategory, filterSeason]);
 
-  // Trigger search on Enter key press
-  const handleSearchKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      // Direct search call without function wrapper
-      if (searchTerm && searchTerm.trim()) {
-        console.log('Searching for:', searchTerm.trim());
+  // Instant search handler - triggers immediately on input change
+  const handleSearchChange = async (e) => {
+    const newSearchTerm = e.target.value;
+    setSearchTerm(newSearchTerm);
+    
+    // If we have products loaded, use local filtering for instant response
+    if (products && products.length > 0) {
+      return; // Local filtering will handle the display
+    }
+    
+    // If no products loaded yet, fetch from server
+    try {
+      if (newSearchTerm && newSearchTerm.trim()) {
+        console.log('Searching for:', newSearchTerm.trim());
         const category = filterCategory === 'all' ? '' : filterCategory;
         const season = filterSeason === 'all' ? '' : filterSeason;
-        searchAllProducts(searchTerm.trim(), 1, category, season);
+        await searchAllProducts(newSearchTerm.trim(), 1, category, season);
       } else {
         const category = filterCategory === 'all' ? '' : filterCategory;
         const season = filterSeason === 'all' ? '' : filterSeason;
-        fetchProducts(1, category, season);
+        await fetchProducts(1, category, season, 'all');
       }
+    } catch (error) {
+      console.error('Search error:', error);
     }
   };
 
@@ -127,6 +137,73 @@ const ProductsManagement = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  // Inventory Statistics
+  const inventoryStats = useMemo(() => {
+    if (!products || !Array.isArray(products)) return {
+      totalProducts: 0,
+      totalStock: 0,
+      lowStockProducts: 0,
+      outOfStockProducts: 0,
+      mostStockedProducts: [],
+      categories: {}
+    };
+
+    let totalStock = 0;
+    let lowStockProducts = 0;
+    let outOfStockProducts = 0;
+    const categoryStats = {};
+    const productStockLevels = [];
+
+    products.forEach(product => {
+      // Calculate total stock for this product
+      let productStock = 0;
+      
+      if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
+        // New schema: sum stock from colorStock
+        productStock = product.colorStock.reduce((sum, cs) => sum + (parseInt(cs.stock) || 0), 0);
+      } else {
+        // Legacy schema: use single stock field
+        productStock = parseInt(product.stock) || 0;
+      }
+
+      totalStock += productStock;
+      productStockLevels.push({ product, stock: productStock });
+
+      // Count low/out of stock products
+      if (productStock === 0) {
+        outOfStockProducts++;
+      } else if (productStock <= 10) {
+        lowStockProducts++;
+      }
+
+      // Category statistics
+      const category = product.category || 'uncategorized';
+      if (!categoryStats[category]) {
+        categoryStats[category] = { count: 0, stock: 0 };
+      }
+      categoryStats[category].count++;
+      categoryStats[category].stock += productStock;
+    });
+
+    // Get most stocked products (top 5)
+    const mostStockedProducts = productStockLevels
+      .sort((a, b) => b.stock - a.stock)
+      .slice(0, 5)
+      .map(item => ({
+        ...item.product,
+        totalStock: item.stock
+      }));
+
+    return {
+      totalProducts: products.length,
+      totalStock,
+      lowStockProducts,
+      outOfStockProducts,
+      mostStockedProducts,
+      categories: categoryStats
+    };
+  }, [products]);
 
 
 
@@ -183,7 +260,14 @@ const ProductsManagement = () => {
       }
       setFormErrors({});
       if (editingProduct) {
-        // Update existing product (no file upload for updates)
+        // Check if new images were selected for update
+        console.log('Edit product - checking for new images:', {
+          defaultImage: formData.defaultImage,
+          subImages: formData.subImages,
+          subImagesLength: formData.subImages ? formData.subImages.length : 0
+        });
+        
+        // First, update text fields
         const productData = {
           name: formData.name,
           category: formData.category,
@@ -197,7 +281,42 @@ const ProductsManagement = () => {
         };
 
         await editProduct(editingProduct._id, productData);
-        setSuccessMessage('Product updated successfully!');
+        
+        // Then, update images if new ones were selected
+        if (formData.defaultImage || (formData.subImages && formData.subImages.length > 0)) {
+          console.log('Updating product images...');
+          
+          // Create FormData for image upload
+          const imageFormData = new FormData();
+          
+          // Compress and add new images
+          const compressionTasks = [];
+          if (formData.defaultImage) {
+            compressionTasks.push(compressImage(formData.defaultImage).then(compressed => ({ type: 'default', file: compressed })));
+          }
+          for (let i = 0; i < formData.subImages.length; i++) {
+            compressionTasks.push(compressImage(formData.subImages[i]).then(compressed => ({ type: 'sub', file: compressed })));
+          }
+
+          if (compressionTasks.length > 0) {
+            console.log('Compressing new images for update...');
+            const compressedResults = await Promise.all(compressionTasks);
+            
+            compressedResults.forEach(({ type, file }) => {
+              if (type === 'default') {
+                imageFormData.append('defaultImage', file);
+              } else {
+                imageFormData.append('subImage', file);
+              }
+            });
+          }
+
+          // Use the dedicated image update endpoint
+          await updateProductImagesOnly(editingProduct._id, imageFormData);
+          setSuccessMessage('Product text and images updated successfully!');
+        } else {
+          setSuccessMessage('Product updated successfully!');
+        }
       } else {
         // Create new product with file upload
         const formDataToSend = new FormData();
@@ -410,6 +529,78 @@ const ProductsManagement = () => {
         </button>
       </div>
 
+      {/* Inventory Statistics Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow-md p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Total Products</p>
+              <p className="text-2xl font-bold text-gray-900">{inventoryStats.totalProducts}</p>
+            </div>
+            <div className="bg-purple-100 p-3 rounded-full">
+              <MdAdd className="h-6 w-6 text-purple-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Total Stock</p>
+              <p className="text-2xl font-bold text-gray-900">{inventoryStats.totalStock.toLocaleString()}</p>
+            </div>
+            <div className="bg-blue-100 p-3 rounded-full">
+              <MdSearch className="h-6 w-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Low Stock</p>
+              <p className="text-2xl font-bold text-yellow-600">{inventoryStats.lowStockProducts}</p>
+            </div>
+            <div className="bg-yellow-100 p-3 rounded-full">
+              <span className="text-yellow-600 font-bold">!</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Out of Stock</p>
+              <p className="text-2xl font-bold text-red-600">{inventoryStats.outOfStockProducts}</p>
+            </div>
+            <div className="bg-red-100 p-3 rounded-full">
+              <span className="text-red-600 font-bold">×</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      
+      {/* Category Breakdown */}
+      {Object.keys(inventoryStats.categories).length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Stock by Category</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.entries(inventoryStats.categories).map(([category, stats]) => (
+              <div key={category} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 capitalize">{category}</p>
+                  <p className="text-xs text-gray-500">{stats.count} products</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-blue-600">{stats.stock} units</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-md p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -420,8 +611,7 @@ const ProductsManagement = () => {
               placeholder="Search products..."
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyDown={handleSearchKeyPress}
+              onChange={handleSearchChange}
             />
           </div>
           <select
@@ -706,25 +896,49 @@ const ProductsManagement = () => {
 
                 {/* Row 4: Images */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Default Image {!editingProduct && '*'}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Default Image {!editingProduct && '*'}
+                    {editingProduct && <span className="text-xs text-gray-400 ml-2">(Leave empty to keep current)</span>}
+                  </label>
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={(e) => setFormData({ ...formData, defaultImage: e.target.files[0] })}
+                    onChange={(e) => {
+                    const file = e.target.files[0];
+                    console.log('Default image selected:', file);
+                    setFormData({ ...formData, defaultImage: file });
+                  }}
                     className={`w-full px-3 py-2 border ${formErrors.defaultImage ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                   />
+                  {formData.defaultImage && (
+                    <p className="text-xs text-green-600 mt-1">
+                      New image selected: {formData.defaultImage.name}
+                    </p>
+                  )}
                   {formErrors.defaultImage && <p className="text-red-500 text-xs mt-1">{formErrors.defaultImage}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Images {!editingProduct && '*'}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Additional Images {!editingProduct && '*'}
+                    {editingProduct && <span className="text-xs text-gray-400 ml-2">(Leave empty to keep current)</span>}
+                  </label>
                   <input
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={(e) => setFormData({ ...formData, subImages: e.target.files })}
+                    onChange={(e) => {
+                    const files = e.target.files;
+                    console.log('Sub images selected:', files, 'Length:', files.length);
+                    setFormData({ ...formData, subImages: files });
+                  }}
                     className={`w-full px-3 py-2 border ${formErrors.subImages ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                   />
+                  {formData.subImages && formData.subImages.length > 0 && (
+                    <p className="text-xs text-green-600 mt-1">
+                      {formData.subImages.length} new image(s) selected
+                    </p>
+                  )}
                   {formErrors.subImages && <p className="text-red-500 text-xs mt-1">{formErrors.subImages}</p>}
                 </div>
               </div>
