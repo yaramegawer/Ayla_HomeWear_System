@@ -220,6 +220,7 @@ const FinanceAnalytics = () => {
       ['Total Expenses', (d.totalExpenses || computedTotalExpenses || 0).toFixed(2)],
       ['Net Profit', (d.finalProfit || 0).toFixed(2)],
       ['Delivered Orders Count', d.deliveredOrdersCount || 0],
+      ['Total Sold Items', d.totalSoldItems || d.totalItemsSold || 0],
     ];
     const csv = csvData.map(row => row.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -238,6 +239,7 @@ const FinanceAnalytics = () => {
   const totalExpenses = analyticsData?.totalExpenses ?? computedTotalExpenses;
   const finalProfit = analyticsData?.finalProfit ?? (deliveredOrdersProfit - totalExpenses);
   const deliveredOrdersCount = analyticsData?.deliveredOrdersCount ?? 0;
+  const totalSoldItems = analyticsData?.totalSoldItems ?? analyticsData?.totalItemsSold ?? 0;
   const profitMargin = deliveredOrdersProfit > 0 ? (finalProfit / deliveredOrdersProfit * 100) : 0;
 
   return (
@@ -400,7 +402,7 @@ const FinanceAnalytics = () => {
               </div>
 
               {/* Card 4 – Delivered Orders Count */}
-              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 md:col-span-2">
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 mb-1">Delivered Orders</p>
@@ -409,6 +411,20 @@ const FinanceAnalytics = () => {
                   </div>
                   <div className="p-4 rounded-xl bg-blue-100">
                     <MdLocalShipping className="h-8 w-8 text-blue-600" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 5 – Total Sold Items */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">Total Sold Items</p>
+                    <p className="text-3xl font-bold text-purple-600">{totalSoldItems}</p>
+                    <p className="text-xs text-gray-400 mt-2">Total quantity of items sold</p>
+                  </div>
+                  <div className="p-4 rounded-xl bg-purple-100">
+                    <MdTrendingUp className="h-8 w-8 text-purple-600" />
                   </div>
                 </div>
               </div>
