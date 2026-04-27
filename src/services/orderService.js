@@ -87,9 +87,9 @@ export const searchProducts = async (query, page = 1, category = '', season = ''
   }
 };
 
-// POST /order - create new order
+// POST /order - create new order with custom pricing support
 export const createOrder = async (orderData) => {
-  const response = await fetch(BASE_URL, {
+  const response = await fetch(`${BASE_URL}/orders`, {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(orderData),
