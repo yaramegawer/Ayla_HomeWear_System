@@ -136,9 +136,12 @@ export const ProductProvider = ({ children }) => {
     setError(null);
     
     try {
-      await createProduct(formData);
-      // Refresh products list
-      await fetchProducts(pagination.currentPage);
+      const response = await createProduct(formData);
+      // Add new product to local state
+      if (response && response.product) {
+        setProducts(prev => [response.product, ...prev]);
+      }
+      return response;
     } catch (err) {
       setError(err.message);
       throw err;
@@ -153,9 +156,12 @@ export const ProductProvider = ({ children }) => {
     setError(null);
     
     try {
-      await updateProduct(id, productData);
-      // Refresh products list
-      await fetchProducts(pagination.currentPage);
+      const response = await updateProduct(id, productData);
+      // Update product in local state
+      if (response && response.product) {
+        setProducts(prev => prev.map(p => p._id === id ? { ...p, ...response.product } : p));
+      }
+      return response;
     } catch (err) {
       setError(err.message);
       throw err;
@@ -170,9 +176,12 @@ export const ProductProvider = ({ children }) => {
     setError(null);
     
     try {
-      await updateProductImages(id, formData);
-      // Refresh products list
-      await fetchProducts(pagination.currentPage);
+      const response = await updateProductImages(id, formData);
+      // Update product in local state
+      if (response && response.product) {
+        setProducts(prev => prev.map(p => p._id === id ? { ...p, ...response.product } : p));
+      }
+      return response;
     } catch (err) {
       setError(err.message);
       throw err;
@@ -188,8 +197,8 @@ export const ProductProvider = ({ children }) => {
     
     try {
       await deleteProduct(id);
-      // Refresh products list
-      await fetchProducts(pagination.currentPage);
+      // Remove product from local state
+      setProducts(prev => prev.filter(p => p._id !== id));
     } catch (err) {
       setError(err.message);
       throw err;

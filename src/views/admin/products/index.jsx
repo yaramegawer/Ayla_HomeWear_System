@@ -281,7 +281,6 @@ const ProductsManagement = () => {
         };
 
         await editProduct(editingProduct._id, productData);
-        await fetchProducts(1, '', '', 'all');
         
         // Then, update images if new ones were selected
         if (formData.defaultImage || (formData.subImages && formData.subImages.length > 0)) {
@@ -379,7 +378,6 @@ const ProductsManagement = () => {
         const t3 = performance.now();
         console.log(`☁️ Vercel Backend (+ Cloudinary) took: ${((t3 - t2) / 1000).toFixed(2)} seconds`);
 
-        await fetchProducts(1, '', '', 'all');
         setSuccessMessage('Product created successfully!');
       }
 
@@ -469,7 +467,6 @@ const ProductsManagement = () => {
     if (window.confirm('Are you sure you want to delete this product?')) {
       try {
         await removeProduct(productId);
-        await fetchProducts(1, '', '', 'all');
       } catch (error) {
         console.error('Error deleting product:', error);
         // Error is already handled by the context
