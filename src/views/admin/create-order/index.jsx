@@ -3,6 +3,7 @@ import { useProduct } from '../../../contexts/ProductContext';
 import { useOrder } from '../../../contexts/OrderContext';
 import { createOrder, updateOrderDetails, confirmDeposit } from '../../../services/orderService';
 import { MdAdd, MdRemove, MdDelete, MdSearch, MdShoppingCart, MdStore, MdCheckCircle, MdPrint } from 'react-icons/md';
+import CustomOrderItem from './CustomOrderItem';
 
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-EG', { style: 'currency', currency: 'EGP' }).format(amount || 0);
@@ -18,9 +19,19 @@ const STORE_CUSTOMER = {
 
 const CreateOrder = () => {
   const { products, fetchProducts } = useProduct();
-  const { fetchOrders } = useOrder();
+  const { 
+    orderItems, 
+    setOrderItems,
+    addOrderItem, 
+    removeOrderItem, 
+    updateOrderItem, 
+    toggleCustomPrice, 
+    updateCustomPrice, 
+    updateCustomDiscount, 
+    calculateOrderTotals,
+    createOrder: createOrderWithCustomPricing 
+  } = useOrder();
 
-  const [orderItems, setOrderItems] = useState([]);
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -70,54 +81,13 @@ const CreateOrder = () => {
   }, [search]);
 
   // Totals
-  const itemsPrice = orderItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
-  const totalPrice = itemsPrice; // no shipping
+  const { subtotal, totalQuantity, itemCount } = calculateOrderTotals();
+  const totalPrice = subtotal; // no shipping
   const changeAmount = cashTendered && Number(cashTendered) >= totalPrice ? Number(cashTendered) - totalPrice : 0;
-
 
   // ── Item management ──────────────────────────────────────────────────────────
 
-  const addItem = (product) => {
-    // default first size/color from product arrays if available
-    const defaultSize = Array.isArray(product.size) && product.size.length ? product.size[0] : '';
-
-    // Build per-color stock map from colorStock array
-    const colorStockMap = {};
-    if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
-      product.colorStock.forEach(cs => { colorStockMap[cs.color] = cs.stock || 0; });
-    }
-    const availColors = Array.isArray(product.colorStock) && product.colorStock.length > 0
-      ? product.colorStock.map(cs => cs.color)
-      : (Array.isArray(product.color) && product.color.length ? product.color : []);
-    const defaultColor = availColors.length ? availColors[0] : '';
-
-    const discount = product.discount || 0;
-    const originalPrice = discount > 0 ? product.price / (1 - discount / 100) : product.price;
-
-    setOrderItems(prev => [...prev, {
-      _productRef: product,           // keep full product for display
-      productId: product._id,
-      name: product.name,
-      code: product.code,
-      price: product.price,     // selling price (already discounted)
-      originalPrice,                   // pre-discount price
-      discount,                        // discount percentage
-      quantity: 1,
-      size: defaultSize,
-      color: defaultColor,
-      availSizes: Array.isArray(product.size) ? product.size : [],
-      availColors,
-      colorStockMap,   // { red: 6, blue: 4 }
-    }]);
-  };
-
-  const updateItem = (index, field, value) => {
-    setOrderItems(prev => prev.map((it, i) => i === index ? { ...it, [field]: value } : it));
-  };
-
-  const removeItem = (index) => {
-    setOrderItems(prev => prev.filter((_, i) => i !== index));
-  };
+  
 
   // ── Submit ───────────────────────────────────────────────────────────────────
 
@@ -142,6 +112,8 @@ const CreateOrder = () => {
         quantity: it.quantity,
         color: it.color || undefined,
         size: it.size || undefined,
+        customPrice: it.useCustomPrice ? it.customPrice : undefined,
+        customDiscount: it.useCustomPrice ? it.customDiscount : undefined,
       })),
     };
 
@@ -166,7 +138,6 @@ const CreateOrder = () => {
       setOrderItems([]);
       setCashTendered('');
       setSuccessMsg('Order created, delivered & deposit confirmed!');
-      fetchOrders();
     } catch (err) {
       setErrorMsg(err.message || 'Failed to create order.');
     } finally {
@@ -284,7 +255,7 @@ const CreateOrder = () => {
                 </div>
 
                 <button
-                  onClick={() => addItem(product)}
+                  onClick={() => addOrderItem(product)}
                   disabled={(product.stock || 0) === 0}
                   className={`mt-3 w-full flex items-center justify-center gap-1 text-sm py-1.5 rounded-lg font-medium transition-colors ${(product.stock || 0) === 0
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -339,12 +310,16 @@ const CreateOrder = () => {
             <h2 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
               <MdShoppingCart className="text-purple-600" />
               Order Items
-              {orderItems.length > 0 && (
-                <span className="ml-auto text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">
-                  {orderItems.length}
-                </span>
-              )}
             </h2>
+              {orderItems.map((item, index) => (
+              <CustomOrderItem
+                key={index}
+                item={item}
+                index={index}
+                onUpdate={updateOrderItem}
+                onRemove={removeOrderItem}
+              />
+            ))}
 
             {orderItems.length === 0 ? (
               <p className="text-center py-8 text-sm text-gray-400">No products added yet.</p>
@@ -357,7 +332,7 @@ const CreateOrder = () => {
                         <p className="text-sm font-semibold text-gray-900">{item.name}</p>
                         <p className="text-xs text-gray-400">{item.code}</p>
                       </div>
-                      <button onClick={() => removeItem(index)} className="text-red-400 hover:text-red-600 ml-2">
+                      <button onClick={() => removeOrderItem(index)} className="text-red-400 hover:text-red-600 ml-2">
                         <MdDelete className="h-4 w-4" />
                       </button>
                     </div>
@@ -370,7 +345,7 @@ const CreateOrder = () => {
                           {item.availSizes.map(s => (
                             <button
                               key={s}
-                              onClick={() => updateItem(index, 'size', s)}
+                              onClick={() => updateOrderItem(index, { size: s })}
                               className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.size === s
                                 ? 'bg-purple-600 text-white border-purple-600'
                                 : 'bg-white text-gray-600 border-gray-200 hover:border-purple-400'
@@ -393,7 +368,7 @@ const CreateOrder = () => {
                             return (
                               <button
                                 key={c}
-                                onClick={() => updateItem(index, 'color', c)}
+                                onClick={() => updateOrderItem(index, { color: c })}
                                 className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.color === c
                                   ? 'bg-purple-600 text-white border-purple-600'
                                   : 'bg-white text-gray-600 border-gray-200 hover:border-purple-400'
@@ -411,12 +386,12 @@ const CreateOrder = () => {
                     <div className="flex items-center justify-between mt-1">
                       <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
                         <button
-                          onClick={() => item.quantity > 1 ? updateItem(index, 'quantity', item.quantity - 1) : removeItem(index)}
+                          onClick={() => item.quantity > 1 ? updateOrderItem(index, { quantity: item.quantity - 1 }) : removeOrderItem(index)}
                           className="px-2 py-1 hover:bg-gray-100"
                         ><MdRemove className="h-3 w-3" /></button>
                         <span className="px-3 text-sm font-medium">{item.quantity}</span>
                         <button
-                          onClick={() => updateItem(index, 'quantity', item.quantity + 1)}
+                          onClick={() => updateOrderItem(index, { quantity: item.quantity + 1 })}
                           className="px-2 py-1 hover:bg-gray-100"
                         ><MdAdd className="h-3 w-3" /></button>
                       </div>
@@ -439,7 +414,7 @@ const CreateOrder = () => {
 
           {/* Due Payment method */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <h3 className="text-sm font-semibold text-gray-800 mb-1">Due Payment Method</h3>
+            <h2 className="text-sm font-semibold text-gray-800 mb-1">Due Payment Method</h2>
             <p className="text-xs text-gray-400 mb-2">How the customer will pay the remaining balance.</p>
             <div className="space-y-2">
               {[
@@ -468,7 +443,7 @@ const CreateOrder = () => {
             <div className="space-y-1.5 text-sm mb-4">
               <div className="flex justify-between text-gray-600">
                 <span>Items Price</span>
-                <span>{formatCurrency(itemsPrice)}</span>
+                <span>{formatCurrency(subtotal)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Shipping</span>
@@ -557,9 +532,14 @@ const CreateOrder = () => {
             <tbody>
               {lastOrder.items.map((it, i) => (
                 <tr key={i}>
-                  <td className="py-1">{it.name} {it.size ? `(${it.size})` : ''}</td>
+                  <td className="py-1">
+                    {it.name} {it.size ? `(${it.size})` : ''}
+                    {it.useCustomPrice && <span className="text-xs text-gray-600 block">Custom Price</span>}
+                  </td>
                   <td className="py-1">{it.quantity}</td>
-                  <td className="text-right py-1">{formatCurrency(it.price * it.quantity)}</td>
+                  <td className="text-right py-1">
+                    {formatCurrency(it.useCustomPrice ? (it.customPrice || it.price) * it.quantity : it.price * it.quantity)}
+                  </td>
                 </tr>
               ))}
             </tbody>

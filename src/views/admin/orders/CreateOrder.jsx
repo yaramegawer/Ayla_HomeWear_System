@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useProduct } from '../../contexts/ProductContext';
-import { useOrder } from '../../contexts/OrderContext';
+import { useOrder } from '../../contexts/OrderProvider';
 import {
   MdAdd,
   MdRemove,

@@ -5,9 +5,9 @@ const OrderContext = createContext();
 
 export const OrderProvider = ({ children }) => {
   const [orders, setOrders] = useState([]);
-  const [currentOrderItems, setCurrentOrderItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [orderItems, setOrderItems] = useState([]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -78,104 +78,98 @@ export const OrderProvider = ({ children }) => {
     }
   };
 
-  const clearError = () => setError(null);
-
+  // Custom pricing functions
   const addOrderItem = (product) => {
+    // Build per-color stock map from colorStock array
+    const colorStockMap = {};
+    if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
+      product.colorStock.forEach(cs => { colorStockMap[cs.color] = cs.stock || 0; });
+    }
+    const availColors = Array.isArray(product.colorStock) && product.colorStock.length > 0
+      ? product.colorStock.map(cs => cs.color)
+      : (Array.isArray(product.color) && product.color.length ? product.color : []);
+    const defaultColor = availColors.length ? availColors[0] : '';
+    const defaultSize = Array.isArray(product.size) && product.size.length ? product.size[0] : '';
+
+    const discount = product.discount || 0;
+    const originalPrice = discount > 0 ? product.price / (1 - discount / 100) : product.price;
+
     const newItem = {
+      _productRef: product,           // keep full product for display
       productId: product._id,
+      name: product.name,
+      code: product.code,
+      price: product.price,     // selling price (already discounted)
+      originalPrice,                   // pre-discount price
+      discount,                        // discount percentage
       quantity: 1,
-      color: Array.isArray(product.colorStock) && product.colorStock.length > 0 ? product.colorStock[0].color : 'default',
-      size: Array.isArray(product.size) && product.size.length > 0 ? product.size[0] : 'M',
+      size: defaultSize,
+      color: defaultColor,
+      availSizes: Array.isArray(product.size) ? product.size : [],
+      availColors,
+      colorStockMap,   // { red: 6, blue: 4 }
       useCustomPrice: false,
       customPrice: null,
       customDiscount: 0,
-      calculatedFinalPrice: 0,
-      product: product
+      calculatedFinalPrice: product.price || 0
     };
-    setCurrentOrderItems([...currentOrderItems, newItem]);
+    setOrderItems(prev => [...prev, newItem]);
   };
 
   const removeOrderItem = (index) => {
-    setCurrentOrderItems(currentOrderItems.filter((_, i) => i !== index));
+    setOrderItems(prev => prev.filter((_, i) => i !== index));
   };
 
   const updateOrderItem = (index, updates) => {
-    const updatedItems = [...currentOrderItems];
-    updatedItems[index] = { ...updatedItems[index], ...updates };
-    setCurrentOrderItems(updatedItems);
+    setOrderItems(prev => prev.map((item, i) => 
+      i === index ? { ...item, ...updates } : item
+    ));
   };
 
   const toggleCustomPrice = (index) => {
-    const updatedItems = [...currentOrderItems];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      useCustomPrice: !updatedItems[index].useCustomPrice
-    };
-    setCurrentOrderItems(updatedItems);
+    setOrderItems(prev => prev.map((item, i) => 
+      i === index ? { ...item, useCustomPrice: !item.useCustomPrice } : item
+    ));
   };
 
-  const updateCustomPrice = (index, price) => {
-    const updatedItems = [...currentOrderItems];
-    const item = updatedItems[index];
-    const customDiscount = item.customDiscount || 0;
-    const finalPrice = price - (price * customDiscount / 100);
-    
-    updatedItems[index] = {
-      ...item,
-      customPrice: price,
-      calculatedFinalPrice: finalPrice
-    };
-    setCurrentOrderItems(updatedItems);
+  const updateCustomPrice = (index, customPrice) => {
+    setOrderItems(prev => prev.map((item, i) => {
+      if (i === index) {
+        const finalPrice = calculateFinalPrice(customPrice, item.customDiscount);
+        return { ...item, customPrice, calculatedFinalPrice: finalPrice };
+      }
+      return item;
+    }));
   };
 
-  const updateCustomDiscount = (index, discount) => {
-    const updatedItems = [...currentOrderItems];
-    const item = updatedItems[index];
-    const customPrice = item.customPrice || item.product.price;
-    const finalPrice = customPrice - (customPrice * discount / 100);
-    
-    updatedItems[index] = {
-      ...item,
-      customDiscount: discount,
-      calculatedFinalPrice: finalPrice
-    };
-    setCurrentOrderItems(updatedItems);
+  const updateCustomDiscount = (index, customDiscount) => {
+    setOrderItems(prev => prev.map((item, i) => {
+      if (i === index) {
+        const finalPrice = calculateFinalPrice(item.customPrice || item.originalPrice, customDiscount);
+        return { ...item, customDiscount, calculatedFinalPrice: finalPrice };
+      }
+      return item;
+    }));
+  };
+
+  const calculateFinalPrice = (price, discount) => {
+    const discountAmount = (price * discount) / 100;
+    return price - discountAmount;
   };
 
   const calculateOrderTotals = () => {
-    let itemsPrice = 0;
-    let customItemsPrice = 0;
-    let totalSavings = 0;
-
-    currentOrderItems.forEach(item => {
-      if (item.useCustomPrice && item.customPrice) {
-        const originalPrice = item.product.price * item.quantity;
-        const finalPrice = item.calculatedFinalPrice * item.quantity;
-        customItemsPrice += finalPrice;
-        totalSavings += (originalPrice - finalPrice);
-      } else {
-        itemsPrice += item.product.price * item.quantity;
-      }
-    });
-
-    return {
-      itemsPrice,
-      customItemsPrice,
-      totalPrice: itemsPrice + customItemsPrice,
-      totalSavings,
-      itemCount: currentOrderItems.length
-    };
+    const subtotal = orderItems.reduce((sum, item) => sum + item.calculatedFinalPrice, 0);
+    const totalQuantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+    return { subtotal, totalQuantity, itemCount: orderItems.length };
   };
 
   const createOrder = async (orderData) => {
     setLoading(true);
     setError(null);
-    
     try {
-      const response = await orderService.createOrder(orderData);
+      await orderService.createOrderWithCustomPricing(orderData);
       await fetchOrders();
-      setCurrentOrderItems([]);
-      return response;
+      setOrderItems([]);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -184,29 +178,30 @@ export const OrderProvider = ({ children }) => {
     }
   };
 
-  const value = {
-    orders,
-    currentOrderItems,
-    loading,
-    error,
-    fetchOrders,
-    updateStatus,
-    confirmDeposit,
-    removeOrder,
-    returnOrder,
-    clearError,
-    addOrderItem,
-    removeOrderItem,
-    updateOrderItem,
-    toggleCustomPrice,
-    updateCustomPrice,
-    updateCustomDiscount,
-    calculateOrderTotals,
-    createOrder
-  };
+  const clearError = () => setError(null);
 
   return (
-    <OrderContext.Provider value={value}>
+    <OrderContext.Provider value={{
+      orders,
+      loading,
+      error,
+      orderItems,
+      setOrderItems,
+      fetchOrders,
+      updateStatus,
+      confirmDeposit,
+      removeOrder,
+      returnOrder,
+      addOrderItem,
+      removeOrderItem,
+      updateOrderItem,
+      toggleCustomPrice,
+      updateCustomPrice,
+      updateCustomDiscount,
+      calculateOrderTotals,
+      createOrder,
+      clearError,
+    }}>
       {children}
     </OrderContext.Provider>
   );
