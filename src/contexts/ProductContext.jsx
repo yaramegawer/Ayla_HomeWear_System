@@ -25,7 +25,7 @@ export const ProductProvider = ({ children }) => {
   });
 
   // Fetch all products
-  const fetchProducts = async (page = 1, category = '', season = '', limit = '') => {
+  const fetchProducts = async (page = 1, category = '', season = '', limit = '', admin = false) => {
     setLoading(true);
     setError(null);
     
@@ -38,7 +38,7 @@ export const ProductProvider = ({ children }) => {
         
         do {
           console.log(`Fetching page ${currentPage} of ${totalPages}`);
-          const response = await getAllProducts(currentPage, category, season, '');
+          const response = await getAllProducts(currentPage, category, season, '', admin);
           
           if (!response || !response.products || !Array.isArray(response.products)) {
             console.error('Invalid products response:', response);
@@ -68,7 +68,7 @@ export const ProductProvider = ({ children }) => {
           hasPrevPage: false
         });
       } else {
-        const response = await getAllProducts(page, category, season, limit);
+        const response = await getAllProducts(page, category, season, limit, admin);
         setProducts(response?.products || []);
         setPagination(response?.pagination || { totalProducts: 0, totalPages: 1, currentPage: 1 });
       }
@@ -113,12 +113,12 @@ export const ProductProvider = ({ children }) => {
   };
 
   // Search products across all products
-  const searchAllProducts = async (query, page = 1, category = '', season = '') => {
+  const searchAllProducts = async (query, page = 1, category = '', season = '', admin = false) => {
     setLoading(true);
     setError(null);
     
     try {
-      const response = await searchProducts(query, page, category, season);
+      const response = await searchProducts(query, page, category, season, admin);
       setProducts(response.products);
       setPagination(response.pagination);
       return response;

@@ -41,7 +41,8 @@ const ProductsManagement = () => {
     size: [],
     description: '',
     defaultImage: null,
-    subImages: []
+    subImages: [],
+    visible: true
   });
 
   const itemsPerPage = 12;
@@ -50,7 +51,7 @@ const ProductsManagement = () => {
   // Fetch all products exactly once on mount, or when we explicitly refresh
   const fetchData = async () => {
     try {
-      await fetchProducts(1, '', '', 'all');
+      await fetchProducts(1, '', '', 'all', true);
     } catch (error) {
       console.error('Fetch error:', error);
     }
@@ -94,11 +95,11 @@ const ProductsManagement = () => {
         console.log('Searching for:', newSearchTerm.trim());
         const category = filterCategory === 'all' ? '' : filterCategory;
         const season = filterSeason === 'all' ? '' : filterSeason;
-        await searchAllProducts(newSearchTerm.trim(), 1, category, season);
+        await searchAllProducts(newSearchTerm.trim(), 1, category, season, true);
       } else {
         const category = filterCategory === 'all' ? '' : filterCategory;
         const season = filterSeason === 'all' ? '' : filterSeason;
-        await fetchProducts(1, category, season, 'all');
+        await fetchProducts(1, category, season, 'all', true);
       }
     } catch (error) {
       console.error('Search error:', error);
@@ -277,7 +278,8 @@ const ProductsManagement = () => {
           discount: parseInt(formData.discount) || 0,
           colorStock: formData.colorStock.map(cs => ({ color: cs.color, stock: parseInt(cs.stock) || 0 })),
           size: formData.size,
-          description: formData.description
+          description: formData.description,
+          visible: formData.visible
         };
 
         await editProduct(editingProduct._id, productData);
@@ -328,6 +330,7 @@ const ProductsManagement = () => {
         formDataToSend.append('season', formData.season);
         formDataToSend.append('buyPrice', parseFloat(formData.buyPrice));
         formDataToSend.append('price', parseFloat(formData.price));
+        formDataToSend.append('visible', formData.visible);
         // discount is only set via the update form, not on create
         if (formData.description && formData.description.trim() !== '') {
           formDataToSend.append('description', formData.description.trim());
@@ -413,7 +416,8 @@ const ProductsManagement = () => {
       size: [],
       description: '',
       defaultImage: null,
-      subImages: []
+      subImages: [],
+      visible: true
     });
     setColorInput('');
     setSizeInput('');
@@ -455,11 +459,24 @@ const ProductsManagement = () => {
       discount: product.discount || 0,
       colorStock: existingColorStock,
       size: product.size,
-      description: product.description
+      description: product.description,
+      visible: product.visible ?? true
     });
     setColorInput(existingColorStock.map(cs => cs.color).join(', '));
     setSizeInput(Array.isArray(product.size) ? product.size.join(', ') : '');
     setShowForm(true);
+  };
+
+  // Quick toggle visibility
+  const toggleVisibility = async (productId, newVisibility) => {
+    try {
+      await editProduct(productId, { visible: newVisibility });
+      setSuccessMessage(`Product ${newVisibility ? 'shown' : 'hidden'} successfully!`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Error toggling visibility:', error);
+      // Error is already handled by the context
+    }
   };
 
   // Delete product
@@ -686,6 +703,23 @@ const ProductsManagement = () => {
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStockColor(product.stock || 0)}`}>
                         {product.stock || 0}
                       </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Visibility:</span>
+                      <div className="flex items-center gap-2">
+                        {product.visible !== false ? (
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">Visible</span>
+                        ) : (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full font-medium">Hidden</span>
+                        )}
+                        <button
+                          onClick={() => toggleVisibility(product._id, product.visible !== false)}
+                          className="text-xs text-purple-600 hover:text-purple-800 font-medium"
+                          title={product.visible !== false ? 'Hide product' : 'Show product'}
+                        >
+                          {product.visible !== false ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                     </div>
                     {/* Per-color stock breakdown */}
                     {Array.isArray(product.colorStock) && product.colorStock.length > 0 && (
@@ -953,6 +987,20 @@ const ProductsManagement = () => {
                   rows="2"
                   placeholder="Product description..."
                 />
+              </div>
+
+              {/* Visibility Toggle */}
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.visible}
+                    onChange={(e) => setFormData({ ...formData, visible: e.target.checked })}
+                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Visible on Website</span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1">When checked, this product will be visible to customers on the website</p>
               </div>
 
               {/* Colors & Stock + Sizes — side by side on desktop */}

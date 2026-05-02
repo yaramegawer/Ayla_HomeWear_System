@@ -1,13 +1,14 @@
 const BASE_URL = 'https://el-mawardy-store.vercel.app/product';
 
 // Get all products with pagination and filtering
-export const getAllProducts = async (page = 1, category = '', season = '', limit = '') => {
+export const getAllProducts = async (page = 1, category = '', season = '', limit = '', admin = false) => {
   try {
     const params = new URLSearchParams();
     if (page) params.append('page', page);
     if (category) params.append('category', category);
     if (season) params.append('season', season);
     if (limit) params.append('limit', limit);
+    if (admin) params.append('admin', 'true');
 
     const response = await fetch(`${BASE_URL}?${params}`, {
       method: 'GET',
@@ -92,7 +93,7 @@ export const searchProductByCode = async (code) => {
 };
 
 // General search products across all products
-export const searchProducts = async (query, page = 1, category = '', season = '') => {
+export const searchProducts = async (query, page = 1, category = '', season = '', admin = false) => {
   try {
     if (query && query.trim()) {
       // Check if query is a product code (alphanumeric with possible numbers) or general search
@@ -116,6 +117,7 @@ export const searchProducts = async (query, page = 1, category = '', season = ''
         if (page) params.append('page', page);
         if (category) params.append('category', category);
         if (season) params.append('season', season);
+        if (admin) params.append('admin', 'true');
 
         const response = await fetch(`${BASE_URL}?${params}`, {
           method: 'GET',
@@ -147,7 +149,7 @@ export const searchProducts = async (query, page = 1, category = '', season = ''
       }
     } else {
       // No query, return all products
-      return await getAllProducts(page, category, season);
+      return await getAllProducts(page, category, season, '', admin);
     }
   } catch (error) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
