@@ -539,7 +539,7 @@ const OrdersManagement = () => {
 
             <div className="p-5 space-y-5">
               {/* Customer & Order Info */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-gray-50 rounded-lg p-3 space-y-1">
                   <p className="text-xs font-semibold text-gray-500 uppercase">Customer</p>
                   <p className="text-sm font-medium text-gray-900">{selectedOrder.customerName}</p>
@@ -555,6 +555,13 @@ const OrdersManagement = () => {
                   <p className="text-xs text-gray-600"><span className="font-medium">Payment:</span> {selectedOrder.paymentStatus?.replace('_', ' ')}</p>
                   <p className="text-xs text-gray-600"><span className="font-medium">Deposit Confirmed:</span> {selectedOrder.depositConfirmed ? 'Yes ✓' : 'No'}</p>
                   {selectedOrder.notes && <p className="text-xs text-gray-600"><span className="font-medium">Notes:</span> {selectedOrder.notes}</p>}
+                </div>
+                
+                {/* Payment Methods */}
+                <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase">Payment Methods</p>
+                  <p className="text-xs text-gray-600"><span className="font-medium">Deposit:</span> {(selectedOrder.depositPaymentMethod || '').replace('_', ' ') || '—'}</p>
+                  <p className="text-xs text-gray-600"><span className="font-medium">Due:</span> {(selectedOrder.duePaymentMethod || '').replace('_', ' ') || '—'}</p>
                 </div>
               </div>
 

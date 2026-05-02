@@ -3,7 +3,6 @@ import { useProduct } from '../../../contexts/ProductContext';
 import { useOrder } from '../../../contexts/OrderContext';
 import { createOrder, updateOrderDetails, confirmDeposit } from '../../../services/orderService';
 import { MdAdd, MdRemove, MdDelete, MdSearch, MdShoppingCart, MdStore, MdCheckCircle, MdPrint } from 'react-icons/md';
-import CustomOrderItem from './CustomOrderItem';
 
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-EG', { style: 'currency', currency: 'EGP' }).format(amount || 0);
@@ -41,7 +40,7 @@ const CreateOrder = () => {
   const [cashTendered, setCashTendered] = useState('');
 
   useEffect(() => {
-    fetchProducts(1, '', '', 'all');
+    fetchProducts(1, '', '', 'all', true);
     // eslint-disable-next-line
   }, []);
 
@@ -309,101 +308,144 @@ const CreateOrder = () => {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
             <h2 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
               <MdShoppingCart className="text-purple-600" />
-              Order Items
+              Order Items ({orderItems.length})
             </h2>
-              {orderItems.map((item, index) => (
-              <CustomOrderItem
-                key={index}
-                item={item}
-                index={index}
-                onUpdate={updateOrderItem}
-                onRemove={removeOrderItem}
-              />
-            ))}
-
+            
             {orderItems.length === 0 ? (
               <p className="text-center py-8 text-sm text-gray-400">No products added yet.</p>
             ) : (
               <div className="space-y-3">
                 {orderItems.map((item, index) => (
                   <div key={index} className="border border-gray-100 rounded-xl p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
                         <p className="text-sm font-semibold text-gray-900">{item.name}</p>
                         <p className="text-xs text-gray-400">{item.code}</p>
                       </div>
-                      <button onClick={() => removeOrderItem(index)} className="text-red-400 hover:text-red-600 ml-2">
+                      <button 
+                        onClick={() => removeOrderItem(index)} 
+                        className="text-red-400 hover:text-red-600 ml-2 p-1"
+                        title="Remove item"
+                      >
                         <MdDelete className="h-4 w-4" />
                       </button>
                     </div>
 
-                    {/* Size */}
-                    {item.availSizes.length > 0 && (
-                      <div className="mb-2">
-                        <label className="text-xs text-gray-500 block mb-1">Size</label>
-                        <div className="flex flex-wrap gap-1">
-                          {item.availSizes.map(s => (
-                            <button
-                              key={s}
-                              onClick={() => updateOrderItem(index, { size: s })}
-                              className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.size === s
-                                ? 'bg-purple-600 text-white border-purple-600'
-                                : 'bg-white text-gray-600 border-gray-200 hover:border-purple-400'
-                                }`}
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Color */}
-                    {item.availColors.length > 0 && (
-                      <div className="mb-2">
-                        <label className="text-xs text-gray-500 block mb-1">Color</label>
-                        <div className="flex flex-wrap gap-1">
-                          {item.availColors.map(c => {
-                            const colorQty = item.colorStockMap && item.colorStockMap[c] != null ? item.colorStockMap[c] : '?';
-                            return (
+                    {/* Options Row */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {/* Size */}
+                      {item.availSizes && item.availSizes.length > 0 && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">Size:</span>
+                          <div className="flex gap-1">
+                            {item.availSizes.map(s => (
                               <button
-                                key={c}
-                                onClick={() => updateOrderItem(index, { color: c })}
-                                className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.color === c
+                                key={s}
+                                onClick={() => updateOrderItem(index, { size: s })}
+                                className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.size === s
                                   ? 'bg-purple-600 text-white border-purple-600'
                                   : 'bg-white text-gray-600 border-gray-200 hover:border-purple-400'
                                   }`}
                               >
-                                {c} ({colorQty})
+                                {s}
                               </button>
-                            );
-                          })}
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Color */}
+                      {item.availColors && item.availColors.length > 0 && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">Color:</span>
+                          <div className="flex gap-1">
+                            {item.availColors.map(c => {
+                              const colorQty = item.colorStockMap && item.colorStockMap[c] != null ? item.colorStockMap[c] : '?';
+                              return (
+                                <button
+                                  key={c}
+                                  onClick={() => updateOrderItem(index, { color: c })}
+                                  className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${item.color === c
+                                    ? 'bg-purple-600 text-white border-purple-600'
+                                    : 'bg-white text-gray-600 border-gray-200 hover:border-purple-400'
+                                    }`}
+                                >
+                                  {c}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pricing and Quantity Row */}
+                    <div className="flex items-center justify-between">
+                      {/* Quantity Controls */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Qty:</span>
+                        <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => item.quantity > 1 ? updateOrderItem(index, { quantity: item.quantity - 1 }) : removeOrderItem(index)}
+                            className="px-2 py-1 hover:bg-gray-100"
+                          ><MdRemove className="h-3 w-3" /></button>
+                          <span className="px-3 text-sm font-medium">{item.quantity}</span>
+                          <button
+                            onClick={() => updateOrderItem(index, { quantity: item.quantity + 1 })}
+                            className="px-2 py-1 hover:bg-gray-100"
+                          ><MdAdd className="h-3 w-3" /></button>
                         </div>
                       </div>
-                    )}
 
-                    {/* Quantity + line price */}
-                    <div className="flex items-center justify-between mt-1">
-                      <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                        <button
-                          onClick={() => item.quantity > 1 ? updateOrderItem(index, { quantity: item.quantity - 1 }) : removeOrderItem(index)}
-                          className="px-2 py-1 hover:bg-gray-100"
-                        ><MdRemove className="h-3 w-3" /></button>
-                        <span className="px-3 text-sm font-medium">{item.quantity}</span>
-                        <button
-                          onClick={() => updateOrderItem(index, { quantity: item.quantity + 1 })}
-                          className="px-2 py-1 hover:bg-gray-100"
-                        ><MdAdd className="h-3 w-3" /></button>
-                      </div>
+                      {/* Price Display and Custom Price Input */}
                       <div className="text-right">
-                        {item.discount > 0 && (
-                          <span className="text-xs text-gray-400 line-through block">
-                            {formatCurrency(item.originalPrice * item.quantity)}
-                          </span>
-                        )}
-                        <span className="text-sm font-bold text-gray-900">
-                          {formatCurrency(item.price * item.quantity)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => updateOrderItem(index, { useCustomPrice: !item.useCustomPrice, customPrice: item.useCustomPrice ? null : item.price })}
+                            className={`text-xs px-2 py-1 rounded font-medium transition-colors ${
+                              item.useCustomPrice 
+                                ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+                                : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
+                            }`}
+                          >
+                            {item.useCustomPrice ? 'Custom' : 'Regular'}
+                          </button>
+                          
+                          {item.useCustomPrice ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">EGP</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.customPrice || ''}
+                                onChange={(e) => {
+                                  const customPrice = parseFloat(e.target.value) || 0;
+                                  updateOrderItem(index, { customPrice, calculatedFinalPrice: customPrice });
+                                }}
+                                className="w-16 px-1 py-0.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-400 text-right"
+                                placeholder="0"
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              {item.discount > 0 && (
+                                <span className="text-xs text-gray-400 line-through block">
+                                  {formatCurrency(item.originalPrice)}
+                                </span>
+                              )}
+                              <span className="text-sm font-bold text-gray-900">
+                                {formatCurrency(item.price)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Line Total */}
+                        <div className="text-xs text-gray-500 mt-1">
+                          Total: {formatCurrency((item.useCustomPrice ? (item.customPrice || item.price) : item.price) * item.quantity)}
+                        </div>
                       </div>
                     </div>
                   </div>
