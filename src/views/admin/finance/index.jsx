@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { getFinanceAnalytics } from '../../../services/orderService';
 import { createExpense, getAllExpenses, updateExpense, deleteExpense } from '../../../services/expenseService';
 import { createPurchase } from '../../../services/purchaseService';
+import { getDailyTreasury, updateFinance } from '../../../services/treasuryService';
 import { useProduct } from '../../../contexts/ProductContext';
 import {
   MdTrendingUp,
@@ -11,7 +12,9 @@ import {
   MdDownload,
   MdAdd,
   MdClose,
-  MdRefresh
+  MdRefresh,
+  MdAccountBalance,
+  MdPayments
 } from 'react-icons/md';
 
 const FinanceAnalytics = () => {
@@ -21,6 +24,19 @@ const FinanceAnalytics = () => {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  // Treasury State
+  const [treasuryData, setTreasuryData] = useState(null);
+  const [treasuryLoading, setTreasuryLoading] = useState(false);
+
+  // Capital Management Form State
+  const [capitalMoney, setCapitalMoney] = useState(0);
+  const [availableCash, setAvailableCash] = useState(0);
+  const [isCapitalModalOpen, setIsCapitalModalOpen] = useState(false);
+  const [capitalForm, setCapitalForm] = useState({
+    capitalMoney: 0,
+    availableCash: 0
+  });
 
   // Expense Modal State
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
@@ -42,6 +58,24 @@ const FinanceAnalytics = () => {
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── Fetch Treasury Data ───────────────────────────────────────────────────────
+
+  const fetchTreasuryData = useCallback(async () => {
+    setTreasuryLoading(true);
+    try {
+      const response = await getDailyTreasury();
+      if (response.success && response.data) {
+        setTreasuryData(response.data);
+        setCapitalMoney(response.data.capitalMoney || 0);
+        setAvailableCash(response.data.availableCash || 0);
+      }
+    } catch (error) {
+      console.error("Failed to fetch treasury data:", error);
+    } finally {
+      setTreasuryLoading(false);
+    }
+  }, []);
 
   // ── Fetch Analytics ─────────────────────────────────────────────────────────
 
@@ -70,7 +104,8 @@ const FinanceAnalytics = () => {
 
   useEffect(() => {
     fetchAnalytics();
-  }, [fetchAnalytics]);
+    fetchTreasuryData();
+  }, [fetchAnalytics, fetchTreasuryData]);
 
   // ── Expense Handlers ────────────────────────────────────────────────────────
 
@@ -164,6 +199,64 @@ const FinanceAnalytics = () => {
       alert(`Failed to save expense: ${error.message}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // ── Finance/Capital Management Handlers ─────────────────────────────────────────
+
+  const handleUpdateFinance = async () => {
+    setIsSubmitting(true);
+    try {
+      await updateFinance({
+        capitalMoney: Number(capitalForm.capitalMoney),
+        availableCash: Number(capitalForm.availableCash)
+      });
+      alert('Finance updated successfully!');
+      setIsCapitalModalOpen(false);
+      fetchTreasuryData();
+    } catch (error) {
+      console.error('Failed to update finance:', error);
+      alert(`Failed to update finance: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenCapitalModal = () => {
+    setCapitalForm({
+      capitalMoney: capitalMoney,
+      availableCash: availableCash
+    });
+    setIsCapitalModalOpen(true);
+  };
+
+  const increaseCapital = async (amount) => {
+    try {
+      const current = treasuryData?.capitalMoney || 0;
+      await updateFinance({
+        capitalMoney: current + amount,
+        availableCash: availableCash
+      });
+      alert(`Capital increased by ${formatCurrency(amount)}!`);
+      fetchTreasuryData();
+    } catch (error) {
+      console.error('Failed to increase capital:', error);
+      alert(`Failed to increase capital: ${error.message}`);
+    }
+  };
+
+  const increaseCash = async (amount) => {
+    try {
+      const current = treasuryData?.availableCash || 0;
+      await updateFinance({
+        capitalMoney: capitalMoney,
+        availableCash: current + amount
+      });
+      alert(`Available cash increased by ${formatCurrency(amount)}!`);
+      fetchTreasuryData();
+    } catch (error) {
+      console.error('Failed to increase cash:', error);
+      alert(`Failed to increase cash: ${error.message}`);
     }
   };
 
@@ -282,6 +375,12 @@ const FinanceAnalytics = () => {
             className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center text-sm"
           >
             <MdRefresh className="mr-1 h-4 w-4" /> Refresh
+          </button>
+          <button
+            onClick={handleOpenCapitalModal}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm"
+          >
+            <MdAccountBalance className="mr-1" /> Capital
           </button>
           <button
             onClick={() => setIsExpenseModalOpen(true)}
@@ -431,6 +530,63 @@ const FinanceAnalytics = () => {
             </div>
           </div>
 
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* ── CAPITAL & CASH CARDS ────────────────────────────────────── */}
+          {/* ══════════════════════════════════════════════════════════════ */}
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-2 rounded-lg bg-blue-600">
+                <MdAccountBalance className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Capital & Cash Management</h2>
+                <p className="text-xs text-gray-400">Business capital and available cash</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Capital Money Card */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-blue-100 group-hover:bg-blue-200 transition-colors">
+                    <MdAccountBalance className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <button
+                    onClick={() => increaseCapital(10000)}
+                    className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+                  >
+                    +10K
+                  </button>
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Capital Money</p>
+                <p className="text-3xl font-bold text-blue-600">
+                  {formatCurrency(capitalMoney)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">Total business capital investment</p>
+              </div>
+
+              {/* Available Cash Card */}
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-xl bg-green-100 group-hover:bg-green-200 transition-colors">
+                    <MdPayments className="h-6 w-6 text-green-600" />
+                  </div>
+                  <button
+                    onClick={() => increaseCash(10000)}
+                    className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded hover:bg-green-100 transition-colors"
+                  >
+                    +10K
+                  </button>
+                </div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Available Cash</p>
+                <p className="text-3xl font-bold text-green-600">
+                  {formatCurrency(availableCash)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">Cash available for operations</p>
+              </div>
+            </div>
+          </div>
+
           {/* ── Expenses Table ──────────────────────────────────────────── */}
           <div className="bg-white rounded-lg shadow-md p-6 mb-8">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Detailed Expenses</h3>
@@ -570,6 +726,94 @@ const FinanceAnalytics = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Capital Management Modal ───────────────────────────────────── */}
+      {isCapitalModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900">Update Capital & Cash</h2>
+              <button onClick={() => setIsCapitalModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <MdClose className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Capital Money (EGP)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
+                  value={capitalForm.capitalMoney}
+                  onChange={(e) => setCapitalForm({ ...capitalForm, capitalMoney: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Available Cash (EGP)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
+                  value={capitalForm.availableCash}
+                  onChange={(e) => setCapitalForm({ ...capitalForm, availableCash: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.00"
+                />
+              </div>
+              
+              {/* Quick Increment Buttons */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">Quick Add:</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setCapitalForm({ ...capitalForm, capitalMoney: capitalForm.capitalMoney + 10000 })}
+                    className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition-colors"
+                  >
+                    +10K Capital
+                  </button>
+                  <button
+                    onClick={() => setCapitalForm({ ...capitalForm, capitalMoney: capitalForm.capitalMoney + 50000 })}
+                    className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition-colors"
+                  >
+                    +50K Capital
+                  </button>
+                  <button
+                    onClick={() => setCapitalForm({ ...capitalForm, availableCash: capitalForm.availableCash + 10000 })}
+                    className="text-xs bg-green-50 text-green-600 px-3 py-1 rounded hover:bg-green-100 transition-colors"
+                  >
+                    +10K Cash
+                  </button>
+                  <button
+                    onClick={() => setCapitalForm({ ...capitalForm, availableCash: capitalForm.availableCash + 50000 })}
+                    className="text-xs bg-green-50 text-green-600 px-3 py-1 rounded hover:bg-green-100 transition-colors"
+                  >
+                    +50K Cash
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={() => setIsCapitalModalOpen(false)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateFinance}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 disabled:opacity-50"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Updating...' : 'Update'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
