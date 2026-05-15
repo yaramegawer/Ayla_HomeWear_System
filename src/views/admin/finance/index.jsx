@@ -1,44 +1,42 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { getFinanceAnalytics } from '../../../services/orderService';
-import { createExpense, getAllExpenses, updateExpense, deleteExpense } from '../../../services/expenseService';
-import { createPurchase } from '../../../services/purchaseService';
-import { getDailyTreasury, updateFinance } from '../../../services/treasuryService';
-import { useProduct } from '../../../contexts/ProductContext';
 import {
-  MdTrendingUp,
+  getFinanceOverview,
+  updateFinanceSettings,
+  getInventoryPurchases,
+  createInventoryPurchase,
+  updateInventoryPurchase,
+  deleteInventoryPurchase,
+} from '../../../services/financeService';
+import { createExpense, getAllExpenses, updateExpense, deleteExpense } from '../../../services/expenseService';
+import {
   MdAttachMoney,
-  MdReceipt,
-  MdLocalShipping,
   MdDownload,
   MdAdd,
   MdClose,
   MdRefresh,
   MdAccountBalance,
-  MdPayments
+  MdPayments,
+  MdInventory,
+  MdReceipt,
 } from 'react-icons/md';
 
 const FinanceAnalytics = () => {
-  const { products } = useProduct();
   const [analyticsData, setAnalyticsData] = useState(null);
+  const [financeSettings, setFinanceSettings] = useState(null);
+  const [availableCashBreakdown, setAvailableCashBreakdown] = useState(null);
+  const [capitalMoney, setCapitalMoney] = useState(0);
   const [expenses, setExpenses] = useState([]);
+  const [inventoryPurchases, setInventoryPurchases] = useState([]);
+  const [inventorySummary, setInventorySummary] = useState({ totalAmount: 0, count: 0 });
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // Treasury State
-  const [treasuryData, setTreasuryData] = useState(null);
-  const [treasuryLoading, setTreasuryLoading] = useState(false);
-
-  // Capital Management Form State
-  const [capitalMoney, setCapitalMoney] = useState(0);
-  const [availableCash, setAvailableCash] = useState(0);
   const [isCapitalModalOpen, setIsCapitalModalOpen] = useState(false);
-  const [capitalForm, setCapitalForm] = useState({
-    capitalMoney: 0,
-    availableCash: 0
-  });
+  const [isCashModalOpen, setIsCashModalOpen] = useState(false);
+  const [capitalForm, setCapitalForm] = useState({ capitalMoney: 0 });
+  const [cashBaselineForm, setCashBaselineForm] = useState({ cashBaseline: 0 });
 
-  // Expense Modal State
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [expenseForm, setExpenseForm] = useState({
@@ -46,68 +44,63 @@ const FinanceAnalytics = () => {
     amount: '',
     category: '',
     paymentMethod: 'vodafone_cash',
-    notes: ''
+    notes: '',
   });
 
-  // Purchase Modal State
-  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
-  const [purchaseForm, setPurchaseForm] = useState({
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
+  const [editingInventory, setEditingInventory] = useState(null);
+  const [inventoryForm, setInventoryForm] = useState({
+    description: '',
+    amount: '',
     supplier: '',
     paymentMethod: 'cash',
-    notes: ''
+    date: '',
+    notes: '',
   });
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ── Fetch Treasury Data ───────────────────────────────────────────────────────
-
-  const fetchTreasuryData = useCallback(async () => {
-    setTreasuryLoading(true);
-    try {
-      const response = await getDailyTreasury();
-      if (response.success && response.data) {
-        setTreasuryData(response.data);
-        setCapitalMoney(response.data.capitalMoney || 0);
-        setAvailableCash(response.data.availableCash || 0);
-      }
-    } catch (error) {
-      console.error("Failed to fetch treasury data:", error);
-    } finally {
-      setTreasuryLoading(false);
-    }
-  }, []);
-
-  // ── Fetch Analytics ─────────────────────────────────────────────────────────
-
-  const fetchAnalytics = useCallback(() => {
+  const getDateRangeIso = useCallback(() => {
     let startIso = '';
     let endIso = '';
     if (startDate) startIso = new Date(`${startDate}T00:00:00.000Z`).toISOString();
     if (endDate) endIso = new Date(`${endDate}T23:59:59.999Z`).toISOString();
+    return { startIso, endIso };
+  }, [startDate, endDate]);
+
+  const fetchData = useCallback(() => {
+    const { startIso, endIso } = getDateRangeIso();
+    const dateParams = startDate || endDate ? { startDate: startIso, endDate: endIso } : {};
 
     setLoading(true);
     Promise.all([
-      getFinanceAnalytics(startIso, endIso),
-      getAllExpenses(startDate || endDate ? { startDate: startIso, endDate: endIso } : {})
+      getFinanceOverview(startIso, endIso),
+      getAllExpenses(dateParams),
+      getInventoryPurchases(startIso, endIso),
     ])
-      .then(([analyticsRes, expensesRes]) => {
-        if (analyticsRes.success) {
-          setAnalyticsData(analyticsRes.data);
+      .then(([overviewRes, expensesRes, inventoryRes]) => {
+        if (overviewRes.success) {
+          const d = overviewRes.data;
+          setAnalyticsData(d.analytics);
+          setFinanceSettings(d.settings);
+          setAvailableCashBreakdown(d.availableCash);
+          setCapitalMoney(d.capitalMoney ?? d.settings?.capitalMoney ?? 0);
         }
         if (expensesRes.success) {
           setExpenses(expensesRes.data || []);
         }
+        if (inventoryRes.success) {
+          setInventoryPurchases(inventoryRes.data || []);
+          setInventorySummary(inventoryRes.summary || { totalAmount: 0, count: 0 });
+        }
       })
-      .catch(err => console.error("Failed to load data: ", err))
+      .catch((err) => console.error('Failed to load finance data:', err))
       .finally(() => setLoading(false));
-  }, [startDate, endDate]);
+  }, [getDateRangeIso, startDate, endDate]);
 
   useEffect(() => {
-    fetchAnalytics();
-    fetchTreasuryData();
-  }, [fetchAnalytics, fetchTreasuryData]);
-
-  // ── Expense Handlers ────────────────────────────────────────────────────────
+    fetchData();
+  }, [fetchData]);
 
   const handleEditExpense = (expense) => {
     setEditingExpense(expense);
@@ -116,7 +109,7 @@ const FinanceAnalytics = () => {
       amount: (expense.amount || 0).toString(),
       category: expense.category || '',
       paymentMethod: expense.paymentMethod || 'vodafone_cash',
-      notes: (expense.notes || '').toString()
+      notes: (expense.notes || '').toString(),
     });
     setIsExpenseModalOpen(true);
   };
@@ -126,10 +119,9 @@ const FinanceAnalytics = () => {
     try {
       const expenseId = expense.id || expense._id;
       await deleteExpense(expenseId);
-      fetchAnalytics();
-      alert("Expense deleted successfully!");
+      fetchData();
+      alert('Expense deleted successfully!');
     } catch (error) {
-      console.error("Failed to delete expense:", error);
       alert(`Failed to delete expense: ${error.message}`);
     }
   };
@@ -139,11 +131,10 @@ const FinanceAnalytics = () => {
     setIsSubmitting(true);
     try {
       let payload;
-      
       if (editingExpense) {
         payload = {
           description: String(expenseForm.description || '').trim(),
-          amount: Number(expenseForm.amount) || 0
+          amount: Number(expenseForm.amount) || 0,
         };
         if (expenseForm.category !== editingExpense.category) {
           payload.category = String(expenseForm.category || '').trim();
@@ -159,163 +150,185 @@ const FinanceAnalytics = () => {
           description: String(expenseForm.description || '').trim(),
           category: String(expenseForm.category || '').trim(),
           paymentMethod: String(expenseForm.paymentMethod || 'vodafone_cash').trim(),
-          amount: Number(expenseForm.amount) || 0
+          amount: Number(expenseForm.amount) || 0,
         };
         if (expenseForm.notes && String(expenseForm.notes).trim() !== '') {
           payload.notes = String(expenseForm.notes).trim();
         }
       }
 
-      // Remove any unexpected fields
-      const allowedFields = ['description', 'category', 'paymentMethod', 'amount', 'notes'];
-      Object.keys(payload).forEach(key => {
-        if (!allowedFields.includes(key)) delete payload[key];
-      });
-      delete payload.id;
-      delete payload._id;
-
       if (editingExpense) {
         const expenseId = editingExpense.id || editingExpense._id;
-        try {
-          await updateExpense(expenseId, payload);
-          alert("Expense updated successfully!");
-        } catch (updateError) {
-          const minimalPayload = { description: payload.description };
-          if (payload.amount !== editingExpense.amount) minimalPayload.amount = payload.amount;
-          await updateExpense(expenseId, minimalPayload);
-          alert("Expense updated successfully!");
-        }
+        await updateExpense(expenseId, payload);
+        alert('Expense updated successfully!');
       } else {
         await createExpense(payload);
-        alert("Expense created successfully!");
+        alert('Expense created successfully!');
       }
-      
+
       setIsExpenseModalOpen(false);
       setEditingExpense(null);
       setExpenseForm({ description: '', amount: '', category: '', paymentMethod: 'vodafone_cash', notes: '' });
-      fetchAnalytics();
+      fetchData();
     } catch (error) {
-      console.error("Failed to save expense:", error);
       alert(`Failed to save expense: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ── Finance/Capital Management Handlers ─────────────────────────────────────────
-
-  const handleUpdateFinance = async () => {
+  const handleSaveCapital = async () => {
     setIsSubmitting(true);
     try {
-      await updateFinance({
-        capitalMoney: Number(capitalForm.capitalMoney),
-        availableCash: Number(capitalForm.availableCash)
-      });
-      alert('Finance updated successfully!');
+      await updateFinanceSettings({ capitalMoney: Number(capitalForm.capitalMoney) });
+      alert('Capital updated successfully!');
       setIsCapitalModalOpen(false);
-      fetchTreasuryData();
+      fetchData();
     } catch (error) {
-      console.error('Failed to update finance:', error);
-      alert(`Failed to update finance: ${error.message}`);
+      alert(`Failed to update capital: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveCashBaseline = async () => {
+    setIsSubmitting(true);
+    try {
+      await updateFinanceSettings({ cashBaseline: Number(cashBaselineForm.cashBaseline) });
+      alert('Cash count saved. Delivered sales after now will be added automatically.');
+      setIsCashModalOpen(false);
+      fetchData();
+    } catch (error) {
+      alert(`Failed to save cash count: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleOpenCapitalModal = () => {
-    setCapitalForm({
-      capitalMoney: capitalMoney,
-      availableCash: availableCash
-    });
+    setCapitalForm({ capitalMoney });
     setIsCapitalModalOpen(true);
+  };
+
+  const handleOpenCashModal = () => {
+    setCashBaselineForm({
+      cashBaseline: financeSettings?.cashBaseline ?? availableCashBreakdown?.cashBaseline ?? 0,
+    });
+    setIsCashModalOpen(true);
   };
 
   const increaseCapital = async (amount) => {
     try {
-      const current = treasuryData?.capitalMoney || 0;
-      await updateFinance({
-        capitalMoney: current + amount,
-        availableCash: availableCash
-      });
+      await updateFinanceSettings({ capitalMoney: capitalMoney + amount });
       alert(`Capital increased by ${formatCurrency(amount)}!`);
-      fetchTreasuryData();
+      fetchData();
     } catch (error) {
-      console.error('Failed to increase capital:', error);
       alert(`Failed to increase capital: ${error.message}`);
     }
   };
 
-  const increaseCash = async (amount) => {
+  const resetInventoryForm = () => {
+    setInventoryForm({
+      description: '',
+      amount: '',
+      supplier: '',
+      paymentMethod: 'cash',
+      date: new Date().toISOString().split('T')[0],
+      notes: '',
+    });
+    setEditingInventory(null);
+  };
+
+  const handleEditInventory = (item) => {
+    setEditingInventory(item);
+    setInventoryForm({
+      description: item.description || '',
+      amount: String(item.amount || ''),
+      supplier: item.supplier || '',
+      paymentMethod: item.paymentMethod || 'cash',
+      date: item.date ? new Date(item.date).toISOString().split('T')[0] : '',
+      notes: item.notes || '',
+    });
+    setIsInventoryModalOpen(true);
+  };
+
+  const handleDeleteInventory = async (item) => {
+    if (!window.confirm('Delete this inventory purchase?')) return;
     try {
-      const current = treasuryData?.availableCash || 0;
-      await updateFinance({
-        capitalMoney: capitalMoney,
-        availableCash: current + amount
-      });
-      alert(`Available cash increased by ${formatCurrency(amount)}!`);
-      fetchTreasuryData();
+      await deleteInventoryPurchase(item._id || item.id);
+      fetchData();
+      alert('Inventory purchase deleted.');
     } catch (error) {
-      console.error('Failed to increase cash:', error);
-      alert(`Failed to increase cash: ${error.message}`);
+      alert(`Failed to delete: ${error.message}`);
     }
   };
 
-  // ── Purchase Handler ────────────────────────────────────────────────────────
-
-  const handleCreatePurchase = async (e) => {
+  const handleSaveInventory = async (e) => {
     e.preventDefault();
-    if (!purchaseForm.supplier.trim()) {
-      alert("Supplier is required.");
+    if (!inventoryForm.description.trim() || !inventoryForm.amount) {
+      alert('Description and amount are required.');
       return;
     }
     setIsSubmitting(true);
     try {
       const payload = {
-        supplier: purchaseForm.supplier,
-        paymentMethod: purchaseForm.paymentMethod
+        description: inventoryForm.description.trim(),
+        amount: Number(inventoryForm.amount),
+        supplier: inventoryForm.supplier?.trim() || undefined,
+        paymentMethod: inventoryForm.paymentMethod,
+        notes: inventoryForm.notes?.trim() || undefined,
       };
-      if (purchaseForm.notes && purchaseForm.notes.trim() !== '') {
-        payload.notes = purchaseForm.notes.trim();
+      if (inventoryForm.date) {
+        payload.date = new Date(inventoryForm.date).toISOString();
       }
-      await createPurchase(payload);
-      setIsPurchaseModalOpen(false);
-      setPurchaseForm({ supplier: '', paymentMethod: 'cash', notes: '' });
-      fetchAnalytics();
+
+      if (editingInventory) {
+        await updateInventoryPurchase(editingInventory._id || editingInventory.id, payload);
+        alert('Inventory purchase updated.');
+      } else {
+        await createInventoryPurchase(payload);
+        alert('Inventory purchase recorded.');
+      }
+
+      setIsInventoryModalOpen(false);
+      resetInventoryForm();
+      fetchData();
     } catch (error) {
-      console.error("Failed to create purchase:", error);
-      alert(error.message || "Failed to create purchase. Please try again.");
+      alert(`Failed to save inventory purchase: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
   const formatCurrency = (amount) => {
     if (amount === undefined || amount === null) return 'N/A';
     return new Intl.NumberFormat('en-EG', {
       style: 'currency',
-      currency: 'EGP'
+      currency: 'EGP',
     }).format(amount);
   };
 
-  // Calculate total expenses from the expenses list as a fallback
-  const computedTotalExpenses = useMemo(() => {
-    return expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
-  }, [expenses]);
+  const computedTotalExpenses = useMemo(
+    () => expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0),
+    [expenses]
+  );
 
   const handleExport = () => {
     const d = analyticsData || {};
+    const cash = availableCashBreakdown || {};
     const csvData = [
       ['Metric', 'Value'],
+      ['Available Cash', (cash.total || 0).toFixed(2)],
+      ['Cash Baseline', (cash.cashBaseline || 0).toFixed(2)],
+      ['Delivered Sales (after baseline)', (cash.deliveredSalesAfterBaseline || 0).toFixed(2)],
+      ['Inventory Purchases', (cash.inventoryPurchases || 0).toFixed(2)],
+      ['Expenses', (cash.expenses || 0).toFixed(2)],
+      ['Capital (separate)', (capitalMoney || 0).toFixed(2)],
       ['Net Sales', (d.netSales || 0).toFixed(2)],
       ['Delivered Orders Profit', (d.deliveredOrdersProfit || 0).toFixed(2)],
-      ['Total Expenses', (d.totalExpenses || computedTotalExpenses || 0).toFixed(2)],
       ['Net Profit', (d.finalProfit || 0).toFixed(2)],
-      ['Delivered Orders Count', d.deliveredOrdersCount || 0],
-      ['Total Sold Items', d.totalSoldItems || d.totalItemsSold || 0],
     ];
-    const csv = csvData.map(row => row.join(',')).join('\n');
+    const csv = csvData.map((row) => row.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -325,73 +338,91 @@ const FinanceAnalytics = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   const netSales = analyticsData?.netSales ?? 0;
   const deliveredOrdersProfit = analyticsData?.deliveredOrdersProfit ?? 0;
   const totalExpenses = analyticsData?.totalExpenses ?? computedTotalExpenses;
-  const finalProfit = analyticsData?.finalProfit ?? (deliveredOrdersProfit - totalExpenses);
+  const finalProfit = analyticsData?.finalProfit ?? deliveredOrdersProfit - totalExpenses;
   const deliveredOrdersCount = analyticsData?.deliveredOrdersCount ?? 0;
   const totalSoldItems = analyticsData?.totalSoldItems ?? analyticsData?.totalItemsSold ?? 0;
-  const profitMargin = deliveredOrdersProfit > 0 ? (finalProfit / deliveredOrdersProfit * 100) : 0;
+
+  const availableCashTotal = availableCashBreakdown?.total ?? 0;
+  const cashBaseline = availableCashBreakdown?.cashBaseline ?? financeSettings?.cashBaseline ?? 0;
+  const deliveredSalesAfterBaseline = availableCashBreakdown?.deliveredSalesAfterBaseline ?? 0;
+  const inventoryTotal = availableCashBreakdown?.inventoryPurchases ?? inventorySummary.totalAmount ?? 0;
+  const expensesInCash = availableCashBreakdown?.expenses ?? totalExpenses;
+
+  const formatBaselineTime = (date) => {
+    if (!date) return 'Not set — record your cash count to start tracking';
+    return `Counted on ${new Date(date).toLocaleString()}`;
+  };
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="mb-6 flex justify-between items-center flex-wrap gap-y-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Finance & Analytics</h1>
-          <p className="text-gray-500 text-sm">Sales & profit overview based on delivered orders</p>
+          <p className="text-gray-500 text-sm">Sales, profit, and live available cash</p>
         </div>
         <div className="flex space-x-3 items-center flex-wrap gap-y-3">
           <div className="flex items-center space-x-2 bg-white border border-gray-300 rounded-lg px-3 shadow-sm h-10 w-fit">
             <span className="text-gray-500 text-sm font-medium">From</span>
             <input
               type="date"
-              className="py-1 text-sm text-gray-700 bg-transparent focus:outline-none focus:ring-0 cursor-pointer"
+              className="py-1 text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer"
               value={startDate}
-              onChange={e => setStartDate(e.target.value)}
+              onChange={(e) => setStartDate(e.target.value)}
             />
             <span className="text-gray-300">|</span>
             <span className="text-gray-500 text-sm font-medium">To</span>
             <input
               type="date"
-              className="py-1 text-sm text-gray-700 bg-transparent focus:outline-none focus:ring-0 cursor-pointer"
+              className="py-1 text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer"
               value={endDate}
-              onChange={e => setEndDate(e.target.value)}
+              onChange={(e) => setEndDate(e.target.value)}
             />
             {(startDate || endDate) && (
               <button
                 onClick={() => { setStartDate(''); setEndDate(''); }}
-                className="ml-1 text-gray-400 hover:text-red-500 p-1 rounded transition-colors"
-                title="Clear Dates (Show All Time)"
+                className="ml-1 text-gray-400 hover:text-red-500 p-1 rounded"
+                title="Clear dates"
               >
                 <MdClose className="h-4 w-4" />
               </button>
             )}
           </div>
           <button
-            onClick={fetchAnalytics}
-            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center text-sm"
+            onClick={fetchData}
+            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center text-sm"
           >
             <MdRefresh className="mr-1 h-4 w-4" /> Refresh
           </button>
           <button
+            onClick={handleOpenCashModal}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center text-sm"
+          >
+            <MdPayments className="mr-1" /> Cash Count
+          </button>
+          <button
             onClick={handleOpenCapitalModal}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center text-sm"
           >
             <MdAccountBalance className="mr-1" /> Capital
           </button>
           <button
             onClick={() => setIsExpenseModalOpen(true)}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center text-sm"
+            className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 shadow-md ring-2 ring-orange-200 flex items-center text-sm font-semibold"
           >
-            <MdAdd className="mr-1" /> Expense
+            <MdReceipt className="mr-1 h-4 w-4" /> Expense
           </button>
-
+          <button
+            onClick={() => { resetInventoryForm(); setIsInventoryModalOpen(true); }}
+            className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 flex items-center text-sm"
+          >
+            <MdInventory className="mr-1" /> Inventory
+          </button>
           <button
             onClick={handleExport}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center text-sm"
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center text-sm"
           >
             <MdDownload className="mr-1" /> Export
           </button>
@@ -400,254 +431,204 @@ const FinanceAnalytics = () => {
 
       {loading ? (
         <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600" />
         </div>
       ) : (
         <>
-          {/* ══════════════════════════════════════════════════════════════ */}
-          {/* ── NET SALES CARD ──────────────────────────────────────────── */}
-          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* Available Cash */}
           <div className="mb-8">
-            <div className={`rounded-2xl shadow-lg p-6 border-2 hover:shadow-xl transition-all duration-200 group ${
-              netSales >= 0
-                ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200'
-                : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
-            }`}>
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-3 rounded-xl ${netSales >= 0 ? 'bg-blue-500' : 'bg-red-500'}`}>
-                  <MdTrendingUp className="h-7 w-7 text-white" />
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl shadow-lg p-6 border-2 border-green-200">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-green-600">
+                    <MdPayments className="h-7 w-7 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Available Cash (computed)</p>
+                    <p className="text-4xl font-extrabold text-green-700">{formatCurrency(availableCashTotal)}</p>
+                    <p className="text-xs text-gray-500 mt-1">{formatBaselineTime(financeSettings?.cashBaselineAt)}</p>
+                  </div>
                 </div>
-                <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                  netSales >= 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  NET REVENUE
+                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-green-100 text-green-700">
+                  LIVE CASH
                 </span>
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
+                <div className="bg-white/80 rounded-lg p-3 border border-green-100">
+                  <p className="text-gray-500">+ Cash baseline</p>
+                  <p className="font-bold text-gray-800">{formatCurrency(cashBaseline)}</p>
+                </div>
+                <div className="bg-white/80 rounded-lg p-3 border border-green-100">
+                  <p className="text-gray-500">+ Delivered sales</p>
+                  <p className="font-bold text-emerald-700">{formatCurrency(deliveredSalesAfterBaseline)}</p>
+                  <p className="text-xs text-gray-400">{availableCashBreakdown?.deliveredOrdersCount ?? 0} orders</p>
+                </div>
+                <div className="bg-white/80 rounded-lg p-3 border border-green-100">
+                  <p className="text-gray-500">− Inventory</p>
+                  <p className="font-bold text-amber-700">{formatCurrency(inventoryTotal)}</p>
+                </div>
+                <div className="bg-white/80 rounded-lg p-3 border border-green-100">
+                  <p className="text-gray-500">− Expenses</p>
+                  <p className="font-bold text-orange-700">{formatCurrency(expensesInCash)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 bg-white rounded-2xl shadow-md p-6 border border-gray-100 max-w-md">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-gray-500">Capital (tracked separately)</p>
+                <button
+                  onClick={() => increaseCapital(10000)}
+                  className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"
+                >
+                  +10K
+                </button>
+              </div>
+              <p className="text-3xl font-bold text-blue-600">{formatCurrency(capitalMoney)}</p>
+              <p className="text-xs text-gray-400 mt-1">Not included in available cash</p>
+            </div>
+          </div>
+
+          {/* Net Sales */}
+          <div className="mb-8">
+            <div className={`rounded-2xl shadow-lg p-6 border-2 ${
+              netSales >= 0 ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200' : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
+            }`}>
               <p className="text-sm font-medium text-gray-500 mb-1">Net Sales</p>
               <p className={`text-4xl font-extrabold ${netSales >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
                 {formatCurrency(netSales)}
               </p>
-              <p className="text-xs text-gray-400 mt-2">Total sales after returns and exchanges</p>
             </div>
           </div>
 
-
-          {/* ══════════════════════════════════════════════════════════════ */}
-          {/* ── PROFIT ANALYTICS SECTION ────────────────────────────────── */}
-          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* Profit Analytics */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-5">
               <div className="p-2 rounded-lg bg-emerald-600">
                 <MdAttachMoney className="h-5 w-5 text-white" />
               </div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Profit Analytics</h2>
-                <p className="text-xs text-gray-400">Profit calculations based on delivered orders</p>
-              </div>
+              <h2 className="text-lg font-bold text-gray-900">Profit Analytics</h2>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-              {/* Card 1 – Delivered Orders Profit */}
-              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`p-3 rounded-xl ${deliveredOrdersProfit >= 0 ? 'bg-emerald-100 group-hover:bg-emerald-200' : 'bg-red-100 group-hover:bg-red-200'} transition-colors`}>
-                    <MdTrendingUp className={`h-6 w-6 ${deliveredOrdersProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} />
-                  </div>
-                </div>
-                <p className="text-sm font-medium text-gray-500 mb-1">Delivered Orders Profit</p>
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100">
+                <p className="text-sm text-gray-500 mb-1">Delivered Orders Profit</p>
                 <p className={`text-3xl font-bold ${deliveredOrdersProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                   {formatCurrency(deliveredOrdersProfit)}
                 </p>
-                <p className="text-xs text-gray-400 mt-2">Selling price − buying price of delivered orders</p>
               </div>
-
-              {/* Card 2 – Total Expenses */}
-              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 rounded-xl bg-orange-100 group-hover:bg-orange-200 transition-colors">
-                    <MdReceipt className="h-6 w-6 text-orange-600" />
-                  </div>
-                </div>
-                <p className="text-sm font-medium text-gray-500 mb-1">Total Expenses</p>
-                <p className="text-3xl font-bold text-orange-600">
-                  {formatCurrency(totalExpenses)}
-                </p>
-                <p className="text-xs text-gray-400 mt-2">Sum of all recorded expenses</p>
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100">
+                <p className="text-sm text-gray-500 mb-1">Total Expenses</p>
+                <p className="text-3xl font-bold text-orange-600">{formatCurrency(totalExpenses)}</p>
               </div>
-
-              {/* Card 3 – Net Profit (highlighted, spans full width) */}
-              <div className={`rounded-2xl shadow-lg p-6 border-2 hover:shadow-xl transition-all duration-200 md:col-span-2
-                ${finalProfit >= 0
-                  ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200'
-                  : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`p-3 rounded-xl ${finalProfit >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}>
-                    <MdAttachMoney className="h-7 w-7 text-white" />
-                  </div>
-                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                    finalProfit >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {finalProfit >= 0 ? 'PROFIT' : 'LOSS'}
-                  </span>
-                </div>
-                <p className="text-sm font-medium text-gray-500 mb-1">Net Profit</p>
+              <div className={`rounded-2xl shadow-lg p-6 border-2 md:col-span-2 ${
+                finalProfit >= 0 ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200' : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
+              }`}>
+                <p className="text-sm text-gray-500 mb-1">Net Profit</p>
                 <p className={`text-4xl font-extrabold ${finalProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                   {formatCurrency(finalProfit)}
                 </p>
-                <p className="text-xs text-gray-400 mt-2">Delivered orders profit − total expenses</p>
               </div>
-
-              {/* Card 4 – Delivered Orders Count */}
-              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 mb-1">Delivered Orders</p>
-                    <p className="text-3xl font-bold text-blue-600">{deliveredOrdersCount}</p>
-                    <p className="text-xs text-gray-400 mt-2">Total orders with delivered status</p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-blue-100">
-                    <MdLocalShipping className="h-8 w-8 text-blue-600" />
-                  </div>
-                </div>
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100">
+                <p className="text-sm text-gray-500">Delivered Orders</p>
+                <p className="text-3xl font-bold text-blue-600">{deliveredOrdersCount}</p>
               </div>
-
-              {/* Card 5 – Total Sold Items */}
-              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 mb-1">Total Sold Items</p>
-                    <p className="text-3xl font-bold text-purple-600">{totalSoldItems}</p>
-                    <p className="text-xs text-gray-400 mt-2">Total quantity of items sold</p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-purple-100">
-                    <MdTrendingUp className="h-8 w-8 text-purple-600" />
-                  </div>
-                </div>
+              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100">
+                <p className="text-sm text-gray-500">Total Sold Items</p>
+                <p className="text-3xl font-bold text-purple-600">{totalSoldItems}</p>
               </div>
             </div>
           </div>
 
-          {/* ══════════════════════════════════════════════════════════════ */}
-          {/* ── CAPITAL & CASH CARDS ────────────────────────────────────── */}
-          {/* ══════════════════════════════════════════════════════════════ */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="p-2 rounded-lg bg-blue-600">
-                <MdAccountBalance className="h-5 w-5 text-white" />
-              </div>
+          {/* Inventory purchases */}
+          <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">Capital & Cash Management</h2>
-                <p className="text-xs text-gray-400">Business capital and available cash</p>
+                <h3 className="text-lg font-bold text-gray-900">Inventory Purchases</h3>
+                <p className="text-sm text-gray-500">
+                  Total in period: {formatCurrency(inventorySummary.totalAmount)} ({inventorySummary.count} entries)
+                </p>
               </div>
+              <button
+                onClick={() => { resetInventoryForm(); setIsInventoryModalOpen(true); }}
+                className="text-sm bg-amber-600 text-white px-3 py-2 rounded-lg hover:bg-amber-700 flex items-center"
+              >
+                <MdAdd className="mr-1" /> Add purchase
+              </button>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Capital Money Card */}
-              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 rounded-xl bg-blue-100 group-hover:bg-blue-200 transition-colors">
-                    <MdAccountBalance className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <button
-                    onClick={() => increaseCapital(10000)}
-                    className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
-                  >
-                    +10K
-                  </button>
-                </div>
-                <p className="text-sm font-medium text-gray-500 mb-1">Capital Money</p>
-                <p className="text-3xl font-bold text-blue-600">
-                  {formatCurrency(capitalMoney)}
-                </p>
-                <p className="text-xs text-gray-400 mt-2">Total business capital investment</p>
-              </div>
-
-              {/* Available Cash Card */}
-              <div className="bg-white rounded-2xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200 group">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 rounded-xl bg-green-100 group-hover:bg-green-200 transition-colors">
-                    <MdPayments className="h-6 w-6 text-green-600" />
-                  </div>
-                  <button
-                    onClick={() => increaseCash(10000)}
-                    className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded hover:bg-green-100 transition-colors"
-                  >
-                    +10K
-                  </button>
-                </div>
-                <p className="text-sm font-medium text-gray-500 mb-1">Available Cash</p>
-                <p className="text-3xl font-bold text-green-600">
-                  {formatCurrency(availableCash)}
-                </p>
-                <p className="text-xs text-gray-400 mt-2">Cash available for operations</p>
-              </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {inventoryPurchases.length > 0 ? (
+                    inventoryPurchases.map((item) => (
+                      <tr key={item._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {new Date(item.date).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-medium">{item.description}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{item.supplier || '—'}</td>
+                        <td className="px-4 py-3 text-sm capitalize">{(item.paymentMethod || '').replace('_', ' ')}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-amber-700">{formatCurrency(item.amount)}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <button onClick={() => handleEditInventory(item)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                          <button onClick={() => handleDeleteInventory(item)} className="text-red-600 hover:text-red-800">Delete</button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="px-4 py-6 text-center text-sm text-gray-500">
+                        No inventory purchases in this period.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          {/* ── Expenses Table ──────────────────────────────────────────── */}
+          {/* Expenses */}
           <div className="bg-white rounded-lg shadow-md p-6 mb-8">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Detailed Expenses</h3>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Method</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-200">
                   {expenses.length > 0 ? (
                     expenses.map((expense) => (
                       <tr key={expense._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(expense.date).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {expense.description}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
-                          {(expense.category || '').replace('_', ' ')}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
-                          {(expense.paymentMethod || '').replace('_', ' ')}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600">
-                          {formatCurrency(expense.amount)}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title={expense.notes}>
-                          {expense.notes || '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => handleEditExpense(expense)}
-                              className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteExpense(expense)}
-                              className="text-red-600 hover:text-red-800 font-medium text-sm"
-                            >
-                              Delete
-                            </button>
-                          </div>
+                        <td className="px-6 py-4 text-sm text-gray-500">{new Date(expense.date).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 text-sm font-medium">{expense.description}</td>
+                        <td className="px-6 py-4 text-sm capitalize">{(expense.category || '').replace('_', ' ')}</td>
+                        <td className="px-6 py-4 text-sm capitalize">{(expense.paymentMethod || '').replace('_', ' ')}</td>
+                        <td className="px-6 py-4 text-sm font-medium text-red-600">{formatCurrency(expense.amount)}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <button onClick={() => handleEditExpense(expense)} className="text-blue-600 mr-3">Edit</button>
+                          <button onClick={() => handleDeleteExpense(expense)} className="text-red-600">Delete</button>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="7" className="px-6 py-4 text-center text-sm text-gray-500">
-                        No expenses found.
-                      </td>
+                      <td colSpan="6" className="px-6 py-4 text-center text-sm text-gray-500">No expenses found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -657,72 +638,104 @@ const FinanceAnalytics = () => {
         </>
       )}
 
-      {/* ── Purchase Modal ────────────────────────────────────────────── */}
-      {isPurchaseModalOpen && (
+      {/* Cash baseline modal */}
+      {isCashModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Add Stock Purchase</h2>
-              <button onClick={() => setIsPurchaseModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <MdClose className="h-6 w-6" />
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Record Cash Count</h2>
+              <button onClick={() => setIsCashModalOpen(false)}><MdClose className="h-6 w-6 text-gray-400" /></button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Enter the cash you have right now. Delivered order sales after this moment will be added automatically.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cash on hand (EGP)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4"
+              value={cashBaselineForm.cashBaseline}
+              onChange={(e) => setCashBaselineForm({ cashBaseline: parseFloat(e.target.value) || 0 })}
+            />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setIsCashModalOpen(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={handleSaveCashBaseline} disabled={isSubmitting} className="px-4 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50">
+                {isSubmitting ? 'Saving...' : 'Save count'}
               </button>
             </div>
-            <form onSubmit={handleCreatePurchase} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Name *</label>
-                  <input
-                    type="text"
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                    value={purchaseForm.supplier}
-                    onChange={(e) => setPurchaseForm({ ...purchaseForm, supplier: e.target.value })}
-                    placeholder="e.g., Factory A, Wholesaler X"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                  <select
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                    value={purchaseForm.paymentMethod}
-                    onChange={(e) => setPurchaseForm({ ...purchaseForm, paymentMethod: e.target.value })}
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="vodafone_cash">Vodafone Cash</option>
-                    <option value="bank">Bank</option>
-                  </select>
-                </div>
+          </div>
+        </div>
+      )}
+
+      {/* Capital modal */}
+      {isCapitalModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Update Capital</h2>
+              <button onClick={() => setIsCapitalModalOpen(false)}><MdClose className="h-6 w-6 text-gray-400" /></button>
+            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Capital Money (EGP)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4"
+              value={capitalForm.capitalMoney}
+              onChange={(e) => setCapitalForm({ capitalMoney: parseFloat(e.target.value) || 0 })}
+            />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setIsCapitalModalOpen(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={handleSaveCapital} disabled={isSubmitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50">
+                {isSubmitting ? 'Saving...' : 'Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inventory modal */}
+      {isInventoryModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">{editingInventory ? 'Edit' : 'Add'} Inventory Purchase</h2>
+              <button onClick={() => { setIsInventoryModalOpen(false); resetInventoryForm(); }}><MdClose className="h-6 w-6 text-gray-400" /></button>
+            </div>
+            <form onSubmit={handleSaveInventory} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Description *</label>
+                <input type="text" required className="w-full px-4 py-2 border rounded-lg" value={inventoryForm.description} onChange={(e) => setInventoryForm({ ...inventoryForm, description: e.target.value })} placeholder="e.g. Summer stock" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  rows="2"
-                  value={purchaseForm.notes}
-                  onChange={(e) => setPurchaseForm({ ...purchaseForm, notes: e.target.value })}
-                  placeholder="Optional notes regarding this purchase..."
-                ></textarea>
+                <label className="block text-sm font-medium mb-1">Amount (EGP) *</label>
+                <input type="number" required min="0.01" step="0.01" className="w-full px-4 py-2 border rounded-lg" value={inventoryForm.amount} onChange={(e) => setInventoryForm({ ...inventoryForm, amount: e.target.value })} />
               </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> The system will automatically calculate purchases from all products with stock greater than 0.
-                </p>
+              <div>
+                <label className="block text-sm font-medium mb-1">Date</label>
+                <input type="date" className="w-full px-4 py-2 border rounded-lg" value={inventoryForm.date} onChange={(e) => setInventoryForm({ ...inventoryForm, date: e.target.value })} />
               </div>
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setIsPurchaseModalOpen(false)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-4 focus:ring-purple-200 disabled:opacity-50"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Saving...' : 'Submit Purchase'}
+              <div>
+                <label className="block text-sm font-medium mb-1">Supplier</label>
+                <input type="text" className="w-full px-4 py-2 border rounded-lg" value={inventoryForm.supplier} onChange={(e) => setInventoryForm({ ...inventoryForm, supplier: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Payment</label>
+                <select className="w-full px-4 py-2 border rounded-lg" value={inventoryForm.paymentMethod} onChange={(e) => setInventoryForm({ ...inventoryForm, paymentMethod: e.target.value })}>
+                  <option value="cash">Cash</option>
+                  <option value="vodafone_cash">Vodafone Cash</option>
+                  <option value="bank">Bank</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Notes</label>
+                <textarea className="w-full px-4 py-2 border rounded-lg" rows="2" value={inventoryForm.notes} onChange={(e) => setInventoryForm({ ...inventoryForm, notes: e.target.value })} />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => { setIsInventoryModalOpen(false); resetInventoryForm(); }} className="px-4 py-2 border rounded-lg">Cancel</button>
+                <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-amber-600 text-white rounded-lg disabled:opacity-50">
+                  {isSubmitting ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>
@@ -730,142 +743,29 @@ const FinanceAnalytics = () => {
         </div>
       )}
 
-      {/* ── Capital Management Modal ───────────────────────────────────── */}
-      {isCapitalModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Update Capital & Cash</h2>
-              <button onClick={() => setIsCapitalModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <MdClose className="h-6 w-6" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Capital Money (EGP)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  value={capitalForm.capitalMoney}
-                  onChange={(e) => setCapitalForm({ ...capitalForm, capitalMoney: parseFloat(e.target.value) || 0 })}
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Available Cash (EGP)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  value={capitalForm.availableCash}
-                  onChange={(e) => setCapitalForm({ ...capitalForm, availableCash: parseFloat(e.target.value) || 0 })}
-                  placeholder="0.00"
-                />
-              </div>
-              
-              {/* Quick Increment Buttons */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-gray-700 mb-2">Quick Add:</p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setCapitalForm({ ...capitalForm, capitalMoney: capitalForm.capitalMoney + 10000 })}
-                    className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition-colors"
-                  >
-                    +10K Capital
-                  </button>
-                  <button
-                    onClick={() => setCapitalForm({ ...capitalForm, capitalMoney: capitalForm.capitalMoney + 50000 })}
-                    className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition-colors"
-                  >
-                    +50K Capital
-                  </button>
-                  <button
-                    onClick={() => setCapitalForm({ ...capitalForm, availableCash: capitalForm.availableCash + 10000 })}
-                    className="text-xs bg-green-50 text-green-600 px-3 py-1 rounded hover:bg-green-100 transition-colors"
-                  >
-                    +10K Cash
-                  </button>
-                  <button
-                    onClick={() => setCapitalForm({ ...capitalForm, availableCash: capitalForm.availableCash + 50000 })}
-                    className="text-xs bg-green-50 text-green-600 px-3 py-1 rounded hover:bg-green-100 transition-colors"
-                  >
-                    +50K Cash
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  onClick={() => setIsCapitalModalOpen(false)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUpdateFinance}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 disabled:opacity-50"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Updating...' : 'Update'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Expense Modal ─────────────────────────────────────────────── */}
+      {/* Expense modal */}
       {isExpenseModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">{editingExpense ? 'Edit Expense' : 'Add Expense'}</h2>
-              <button onClick={() => {
-                setIsExpenseModalOpen(false);
-                setEditingExpense(null);
-                setExpenseForm({ description: '', amount: '', category: '', paymentMethod: 'vodafone_cash', notes: '' });
-              }} className="text-gray-400 hover:text-gray-600">
-                <MdClose className="h-6 w-6" />
+            <div className="flex justify-between items-center p-6 border-b">
+              <h2 className="text-xl font-bold">{editingExpense ? 'Edit Expense' : 'Add Expense'}</h2>
+              <button onClick={() => { setIsExpenseModalOpen(false); setEditingExpense(null); setExpenseForm({ description: '', amount: '', category: '', paymentMethod: 'vodafone_cash', notes: '' }); }}>
+                <MdClose className="h-6 w-6 text-gray-400" />
               </button>
             </div>
             <form onSubmit={handleCreateExpense} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  value={expenseForm.description}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
-                  placeholder="e.g., Office Supplies"
-                />
+                <label className="block text-sm font-medium mb-1">Description *</label>
+                <input type="text" required className="w-full px-4 py-2 border rounded-lg" value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (EGP) *</label>
-                <input
-                  type="number"
-                  required
-                  min="0.01"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  value={expenseForm.amount}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-                  placeholder="0.00"
-                />
+                <label className="block text-sm font-medium mb-1">Amount (EGP) *</label>
+                <input type="number" required min="0.01" step="0.01" className="w-full px-4 py-2 border rounded-lg" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-                <select
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  value={expenseForm.category}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                >
-                  <option value="">Select a category</option>
+                <label className="block text-sm font-medium mb-1">Category *</label>
+                <select required className="w-full px-4 py-2 border rounded-lg" value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
+                  <option value="">Select</option>
                   <option value="rent">Rent</option>
                   <option value="utilities">Utilities</option>
                   <option value="marketing">Marketing</option>
@@ -879,42 +779,21 @@ const FinanceAnalytics = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                <select
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  value={expenseForm.paymentMethod}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value })}
-                >
+                <label className="block text-sm font-medium mb-1">Payment Method</label>
+                <select className="w-full px-4 py-2 border rounded-lg" value={expenseForm.paymentMethod} onChange={(e) => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value })}>
                   <option value="vodafone_cash">Vodafone Cash</option>
                   <option value="cash">Cash</option>
                   <option value="bank">Bank</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-                  rows="3"
-                  value={expenseForm.notes}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
-                  placeholder="Additional details..."
-                ></textarea>
+                <label className="block text-sm font-medium mb-1">Notes</label>
+                <textarea className="w-full px-4 py-2 border rounded-lg" rows="3" value={expenseForm.notes} onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })} />
               </div>
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setIsExpenseModalOpen(false)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-4 focus:ring-purple-200 disabled:opacity-50"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Saving...' : 'Save Expense'}
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setIsExpenseModalOpen(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
+                <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50">
+                  {isSubmitting ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>

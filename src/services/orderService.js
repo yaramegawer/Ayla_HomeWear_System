@@ -1,4 +1,6 @@
-const BASE_URL = 'https://el-mawardy-store.vercel.app/order';
+import { API_URL } from "../config/api";
+
+const BASE_URL = `${API_URL}/order`;
 
 const getHeaders = (json = true) => {
   const token = localStorage.getItem('token');

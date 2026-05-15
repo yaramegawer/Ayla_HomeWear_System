@@ -1,4 +1,6 @@
-const BASE_URL = 'https://el-mawardy-store.vercel.app/treasury';
+import { API_URL } from "../config/api";
+
+const BASE_URL = `${API_URL}/treasury`;
 
 // Get daily treasury data
 export const getDailyTreasury = async () => {
