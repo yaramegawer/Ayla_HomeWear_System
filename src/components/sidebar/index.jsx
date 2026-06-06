@@ -15,6 +15,8 @@ const Sidebar = ({ open, onClose }) => {
 
   const filteredRoutes = routes.filter(r => {
     if (isCashier && r.path === 'finance') return false;
+    if (r.path === 'returns') return false;
+    if (r.path === 'discounts') return false;
     return true;
   });
 

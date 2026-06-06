@@ -1,6 +1,7 @@
 import { API_URL } from "../config/api";
 
 const BASE_URL = `${API_URL}/order`;
+const API_BASE_URL = `${API_URL}/api/orders`;
 
 const getHeaders = (json = true) => {
   const token = localStorage.getItem('token');
@@ -12,7 +13,8 @@ const getHeaders = (json = true) => {
 const handleResponse = async (response) => {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.message || `HTTP ${response.status}`);
+    console.error('API Error Response:', data);
+    throw new Error(data.message || data.error || `HTTP ${response.status}`);
   }
   return data;
 };
@@ -169,6 +171,31 @@ export const deleteOrderWithRestore = async (id) => {
   const response = await fetch(`${BASE_URL}/${id}?restore=true`, {
     method: 'DELETE',
     headers: getHeaders(),
+    mode: 'cors'
+  });
+  return handleResponse(response);
+};
+
+// PATCH /order/:id/return-items - item-level returns
+export const createReturnRequest = async (orderId, returnData) => {
+  const url = `${BASE_URL}/${orderId}/return-items`;
+  console.log('Return request URL:', url);
+  console.log('Return request body:', JSON.stringify(returnData, null, 2));
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify(returnData),
+    mode: 'cors'
+  });
+  return handleResponse(response);
+};
+
+// PATCH /order/:id/exchange - item-level exchanges
+export const createExchangeRequest = async (orderId, exchangeData) => {
+  const response = await fetch(`${BASE_URL}/${orderId}/exchange`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify(exchangeData),
     mode: 'cors'
   });
   return handleResponse(response);

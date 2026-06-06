@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useOrder } from '../../../contexts/OrderContext';
 import { useProduct } from '../../../contexts/ProductContext';
+import { createReturnRequest, createExchangeRequest } from '../../../services/orderService';
 import {
   MdSearch,
   MdVisibility,
@@ -8,6 +9,9 @@ import {
   MdDelete,
   MdRefresh,
   MdEdit,
+  MdArrowBack,
+  MdSwapHoriz,
+  MdKeyboardReturn,
 } from 'react-icons/md';
 
 const formatCurrency = (amount) =>
@@ -55,7 +59,7 @@ const parseError = (message = '') => {
 
 const OrdersManagement = () => {
   const { orders, loading, error, fetchOrders, updateStatus, confirmDeposit, removeOrder, clearError } = useOrder();
-  const { products } = useProduct();
+  const { products, fetchProducts } = useProduct();
 
   // Look up a product's code by its _id
   const getProductCode = (productId) => {
@@ -78,8 +82,29 @@ const OrdersManagement = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [currentPage, setCurrentPage]     = useState(1);
 
+  // Return/Exchange modal states
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [showExchangeModal, setShowExchangeModal] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [returnQuantity, setReturnQuantity] = useState(1);
+  const [returnReason, setReturnReason] = useState('');
+  const [exchangeQuantity, setExchangeQuantity] = useState(1);
+  const [exchangeNewColor, setExchangeNewColor] = useState('');
+  const [exchangeNewSize, setExchangeNewSize] = useState('');
+  const [exchangeNewProductId, setExchangeNewProductId] = useState('');
+  const [exchangeProductSearch, setExchangeProductSearch] = useState('');
+  const [useManualColor, setUseManualColor] = useState(false);
+  const [useManualSize, setUseManualSize] = useState(false);
+  const [detailsTab, setDetailsTab] = useState('details'); // 'details' | 'returns'
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalError, setModalError] = useState('');
+
   useEffect(() => {
     fetchOrders();
+    // Fetch all products for exchange modal
+    fetchProducts(1, '', '', 'all', true).then(() => {
+      console.log('Products loaded:', products.length);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -159,6 +184,232 @@ const OrdersManagement = () => {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // Helper functions for return/exchange
+  const isItemEligibleForReturn = (item) => {
+    if (!selectedOrder || selectedOrder.status !== 'delivered') return false;
+    const returnedQty = item.returnedQuantity || 0;
+    const exchangedQty = item.exchangedQuantity || 0;
+    const availableQty = item.quantity - returnedQty - exchangedQty;
+    return availableQty > 0;
+  };
+
+  const isItemEligibleForExchange = (item) => {
+    if (!selectedOrder || selectedOrder.status !== 'delivered') return false;
+    const returnedQty = item.returnedQuantity || 0;
+    const exchangedQty = item.exchangedQuantity || 0;
+    const availableQty = item.quantity - returnedQty - exchangedQty;
+    return availableQty > 0;
+  };
+
+  const getItemAvailableQuantity = (item) => {
+    const returnedQty = item.returnedQuantity || 0;
+    const exchangedQty = item.exchangedQuantity || 0;
+    return item.quantity - returnedQty - exchangedQty;
+  };
+
+  const openReturnModal = (item) => {
+    setSelectedItem(item);
+    setReturnQuantity(1);
+    setReturnReason('');
+    setModalError('');
+    setShowReturnModal(true);
+  };
+
+  const openExchangeModal = (item) => {
+    setSelectedItem(item);
+    setExchangeQuantity(1);
+    setExchangeNewColor(item.color || '');
+    setExchangeNewSize(item.size || '');
+    setExchangeNewProductId(item.productId || '');
+    setExchangeProductSearch('');
+    setUseManualColor(false);
+    setUseManualSize(false);
+    setModalError('');
+    setShowExchangeModal(true);
+  };
+
+  const handleCloseReturnModal = () => {
+    setShowReturnModal(false);
+    setSelectedItem(null);
+    setReturnQuantity(1);
+    setReturnReason('');
+    setModalError('');
+  };
+
+  const handleCloseExchangeModal = () => {
+    setShowExchangeModal(false);
+    setSelectedItem(null);
+    setExchangeQuantity(1);
+    setExchangeNewColor('');
+    setExchangeNewSize('');
+    setExchangeNewProductId('');
+    setExchangeProductSearch('');
+    setUseManualColor(false);
+    setUseManualSize(false);
+    setModalError('');
+  };
+
+  const handleReturnSubmit = async () => {
+    if (!selectedItem || !selectedOrder) return;
+    
+    const availableQty = getItemAvailableQuantity(selectedItem);
+    if (returnQuantity > availableQty) {
+      setModalError(`Cannot return more than ${availableQty} items`);
+      return;
+    }
+    if (returnQuantity < 1) {
+      setModalError('Return quantity must be at least 1');
+      return;
+    }
+    if (!returnReason.trim()) {
+      setModalError('Return reason is required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setModalError('');
+    try {
+      const requestBody = {
+        returnItems: [{
+          originalLineItemId: selectedItem._id,
+          quantity: returnQuantity
+        }],
+        returnReason: returnReason.trim()
+      };
+      console.log('Submitting return for order:', selectedOrder._id);
+      console.log('Request body:', JSON.stringify(requestBody, null, 2));
+      await createReturnRequest(selectedOrder._id, requestBody);
+      
+      // Refresh order data
+      await fetchOrders();
+      const updatedOrder = orders.find(o => o._id === selectedOrder._id);
+      if (updatedOrder) setSelectedOrder(updatedOrder);
+      
+      handleCloseReturnModal();
+      alert('Return request submitted successfully');
+    } catch (e) {
+      console.error('Return error:', e);
+      setModalError(e.message || 'Failed to submit return request');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleExchangeSubmit = async () => {
+    if (!selectedItem || !selectedOrder) return;
+    
+    const availableQty = getItemAvailableQuantity(selectedItem);
+    if (exchangeQuantity > availableQty) {
+      setModalError(`Cannot exchange more than ${availableQty} items`);
+      return;
+    }
+    if (exchangeQuantity < 1) {
+      setModalError('Exchange quantity must be at least 1');
+      return;
+    }
+    if (!exchangeNewProductId) {
+      setModalError('Please select a replacement product');
+      return;
+    }
+    if (!exchangeNewColor.trim()) {
+      setModalError('Please select a replacement color');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setModalError('');
+    try {
+      console.log('Submitting exchange for order:', selectedOrder._id);
+      console.log('Exchange items:', [{
+        originalLineItemId: selectedItem._id,
+        newProductId: exchangeNewProductId,
+        quantity: exchangeQuantity,
+        newColor: exchangeNewColor.trim(),
+        newSize: exchangeNewSize.trim() || undefined
+      }]);
+      await createExchangeRequest(selectedOrder._id, {
+        exchangeItems: [{
+          originalLineItemId: selectedItem._id,
+          newProductId: exchangeNewProductId,
+          quantity: exchangeQuantity,
+          newColor: exchangeNewColor.trim(),
+          newSize: exchangeNewSize.trim() || undefined
+        }],
+        exchangeReason: 'Customer requested exchange'
+      });
+      
+      // Refresh order data
+      await fetchOrders();
+      const updatedOrder = orders.find(o => o._id === selectedOrder._id);
+      if (updatedOrder) setSelectedOrder(updatedOrder);
+      
+      handleCloseExchangeModal();
+      alert('Exchange request submitted successfully');
+    } catch (e) {
+      console.error('Exchange error:', e);
+      setModalError(e.message || 'Failed to submit exchange request');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Get available colors for a product
+  const getProductColors = (productId) => {
+    const product = products.find(p => p._id === productId);
+    if (!product) {
+      console.log('Product not found for ID:', productId);
+      return [];
+    }
+    console.log('Product data for colors:', product);
+    // Try different possible data structures for variants
+    if (product.variants && Array.isArray(product.variants)) {
+      const colors = [...new Set(product.variants.map(v => v.color).filter(Boolean))];
+      console.log('Colors from variants:', colors);
+      return colors;
+    }
+    if (product.colors && Array.isArray(product.colors)) {
+      console.log('Colors from colors array:', product.colors);
+      return product.colors;
+    }
+    if (product.availableColors && Array.isArray(product.availableColors)) {
+      console.log('Colors from availableColors:', product.availableColors);
+      return product.availableColors;
+    }
+    console.log('No colors found for product');
+    return [];
+  };
+
+  // Get available sizes for a product and color
+  const getProductSizes = (productId, color) => {
+    const product = products.find(p => p._id === productId);
+    if (!product) {
+      console.log('Product not found for ID:', productId);
+      return [];
+    }
+    console.log('Getting sizes for product:', productId, 'color:', color);
+    // Try different possible data structures for variants
+    if (product.variants && Array.isArray(product.variants)) {
+      if (color) {
+        const sizes = [...new Set(product.variants.filter(v => v.color === color).map(v => v.size).filter(Boolean))];
+        console.log('Sizes from variants with color:', sizes);
+        return sizes;
+      }
+      const sizes = [...new Set(product.variants.map(v => v.size).filter(Boolean))];
+      console.log('Sizes from variants:', sizes);
+      return sizes;
+    }
+    if (product.sizes && Array.isArray(product.sizes)) {
+      console.log('Sizes from sizes array:', product.sizes);
+      return product.sizes;
+    }
+    if (product.availableSizes && Array.isArray(product.availableSizes)) {
+      console.log('Sizes from availableSizes:', product.availableSizes);
+      return product.availableSizes;
+    }
+    console.log('No sizes found for product');
+    return [];
   };
 
   return (
@@ -527,9 +778,9 @@ const OrdersManagement = () => {
       {/* Order Details Modal */}
       {showDetails && selectedOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b">
+            <div className="flex items-center justify-between p-5 border-b shrink-0">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Order Details</h2>
                 <p className="text-xs text-gray-400 font-mono">#{selectedOrder._id}</p>
@@ -537,7 +788,25 @@ const OrdersManagement = () => {
               <button onClick={() => setShowDetails(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
             </div>
 
-            <div className="p-5 space-y-5">
+            {/* Tabs */}
+            <div className="flex border-b shrink-0">
+              <button
+                onClick={() => setDetailsTab('details')}
+                className={`px-6 py-3 text-sm font-medium ${detailsTab === 'details' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Order Details
+              </button>
+              <button
+                onClick={() => setDetailsTab('returns')}
+                className={`px-6 py-3 text-sm font-medium ${detailsTab === 'returns' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Returns & Exchanges
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1">
+              {detailsTab === 'details' && (
+                <div className="space-y-5">
               {/* Customer & Order Info */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-gray-50 rounded-lg p-3 space-y-1">
@@ -572,7 +841,7 @@ const OrdersManagement = () => {
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50">
                       <tr>
-                        {['Code', 'Color', 'Size', 'Qty', 'Price', 'Line Total'].map(h => (
+                        {['Code', 'Color', 'Size', 'Qty', 'Status', 'Price', 'Line Total', 'Actions'].map(h => (
                           <th key={h} className="px-3 py-2 text-left text-gray-500 font-medium">{h}</th>
                         ))}
                       </tr>
@@ -583,12 +852,31 @@ const OrdersManagement = () => {
                         const hasDiscount = discountPct > 0;
                         const sellingPrice = item.finalPrice || item.price;
                         const originalPrice = hasDiscount ? (item.price || sellingPrice) / (1 - discountPct / 100) : sellingPrice;
+                        const returnedQty = item.returnedQuantity || 0;
+                        const exchangedQty = item.exchangedQuantity || 0;
+                        const availableQty = item.quantity - returnedQty - exchangedQty;
+                        const canReturn = isItemEligibleForReturn(item);
+                        const canExchange = isItemEligibleForExchange(item);
                         return (
                           <tr key={i} className="hover:bg-gray-50">
                             <td className="px-3 py-2 font-mono font-medium text-purple-700">{getProductCode(item.productId)}</td>
                             <td className="px-3 py-2">{item.color || '—'}</td>
                             <td className="px-3 py-2">{item.size || '—'}</td>
-                            <td className="px-3 py-2">{item.quantity}</td>
+                            <td className="px-3 py-2">
+                              {item.quantity}
+                              {(returnedQty > 0 || exchangedQty > 0) && (
+                                <div className="text-[10px] text-gray-500">
+                                  {returnedQty > 0 && <span className="text-orange-600">Returned: {returnedQty}</span>}
+                                  {returnedQty > 0 && exchangedQty > 0 && <span> · </span>}
+                                  {exchangedQty > 0 && <span className="text-blue-600">Exchanged: {exchangedQty}</span>}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${availableQty > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {availableQty > 0 ? `${availableQty} available` : 'Fully returned/exchanged'}
+                              </span>
+                            </td>
                             <td className="px-3 py-2">
                               {hasDiscount ? (
                                 <div>
@@ -609,6 +897,26 @@ const OrdersManagement = () => {
                               ) : (
                                 formatCurrency(sellingPrice * item.quantity)
                               )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => openReturnModal(item)}
+                                  disabled={!canReturn}
+                                  className={`p-1 rounded text-xs ${canReturn ? 'text-orange-600 hover:bg-orange-50' : 'text-gray-300 cursor-not-allowed'}`}
+                                  title="Return Item"
+                                >
+                                  <MdKeyboardReturn className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => openExchangeModal(item)}
+                                  disabled={!canExchange}
+                                  className={`p-1 rounded text-xs ${canExchange ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-300 cursor-not-allowed'}`}
+                                  title="Exchange Item"
+                                >
+                                  <MdSwapHoriz className="h-4 w-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -718,6 +1026,413 @@ const OrdersManagement = () => {
                   onClick={() => setShowDetails(false)}
                   className="flex-1 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
                 >Close</button>
+              </div>
+                </div>
+              )}
+
+              {/* Returns & Exchanges Tab */}
+              {detailsTab === 'returns' && (
+                <div className="space-y-5">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 mb-3">Return & Exchange Requests</p>
+                    {(selectedOrder.returnRequests || []).length === 0 && (selectedOrder.exchangeRequests || []).length === 0 ? (
+                      <div className="bg-gray-50 rounded-lg p-6 text-center">
+                        <p className="text-sm text-gray-500">No return or exchange requests for this order</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {/* Return Requests */}
+                        {(selectedOrder.returnRequests || []).length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Return Requests</p>
+                            <div className="space-y-2">
+                              {(selectedOrder.returnRequests || []).map((req, i) => (
+                                <div key={i} className="bg-orange-50 border border-orange-100 rounded-lg p-3">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">{getProductCode(req.productId)}</p>
+                                      <p className="text-xs text-gray-600">Quantity: {req.quantity}</p>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                      req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                      req.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                      req.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                      'bg-blue-100 text-blue-700'
+                                    }`}>
+                                      {req.status || 'Pending'}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-600 mb-1">Reason: {req.returnReason}</p>
+                                  <p className="text-xs text-gray-500">Refund: {formatCurrency(req.refundAmount)} · {formatDate(req.createdAt)}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Exchange Requests */}
+                        {(selectedOrder.exchangeRequests || []).length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Exchange Requests</p>
+                            <div className="space-y-2">
+                              {(selectedOrder.exchangeRequests || []).map((req, i) => (
+                                <div key={i} className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">{getProductCode(req.productId)}</p>
+                                      <p className="text-xs text-gray-600">
+                                        {req.originalColor} / {req.originalSize} → {req.newColor} / {req.newSize}
+                                      </p>
+                                      <p className="text-xs text-gray-600">Quantity: {req.quantity}</p>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                      req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                      req.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                      req.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                      'bg-blue-100 text-blue-700'
+                                    }`}>
+                                      {req.status || 'Pending'}
+                                    </span>
+                                  </div>
+                                  {req.priceDifference !== undefined && (
+                                    <p className="text-xs font-medium mb-1">
+                                      Price Difference: {req.priceDifference > 0 ? '+' : ''}{formatCurrency(req.priceDifference)}
+                                    </p>
+                                  )}
+                                  <p className="text-xs text-gray-500">{formatDate(req.createdAt)}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Item Modal */}
+      {showReturnModal && selectedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Return Item</h2>
+                <p className="text-xs text-gray-400">{getProductCode(selectedItem.productId)}</p>
+              </div>
+              <button onClick={handleCloseReturnModal} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Product Info */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-sm font-medium text-gray-900">{getProductCode(selectedItem.productId)}</p>
+                <p className="text-xs text-gray-600">Color: {selectedItem.color || '—'} · Size: {selectedItem.size || '—'}</p>
+                <p className="text-xs text-gray-600">Purchased: {selectedItem.quantity} · Available: {getItemAvailableQuantity(selectedItem)}</p>
+                <p className="text-xs text-gray-600">Price: {formatCurrency(selectedItem.finalPrice || selectedItem.price)}</p>
+              </div>
+
+              {/* Quantity Selector */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Return Quantity</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setReturnQuantity(Math.max(1, returnQuantity - 1))}
+                    className="w-8 h-8 rounded border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="1"
+                    max={getItemAvailableQuantity(selectedItem)}
+                    value={returnQuantity}
+                    onChange={(e) => setReturnQuantity(Math.min(getItemAvailableQuantity(selectedItem), Math.max(1, parseInt(e.target.value) || 1)))}
+                    className="w-16 text-center px-2 py-1 border border-gray-300 rounded"
+                  />
+                  <button
+                    onClick={() => setReturnQuantity(Math.min(getItemAvailableQuantity(selectedItem), returnQuantity + 1))}
+                    className="w-8 h-8 rounded border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Return Reason */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Return Reason *</label>
+                <textarea
+                  rows={3}
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder="Please provide a reason for the return..."
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
+                />
+              </div>
+
+              {/* Refund Preview */}
+              <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+                <p className="text-xs font-semibold text-green-700 mb-1">Refund Preview</p>
+                <p className="text-xs text-gray-600">Unit Price: {formatCurrency(selectedItem.finalPrice || selectedItem.price)}</p>
+                <p className="text-xs text-gray-600">Quantity: {returnQuantity}</p>
+                <p className="text-sm font-bold text-green-700">Refund Amount: {formatCurrency((selectedItem.finalPrice || selectedItem.price) * returnQuantity)}</p>
+              </div>
+
+              {modalError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-xs text-red-600">{modalError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleReturnSubmit}
+                  disabled={isSubmitting}
+                  className={`flex-1 py-2 text-sm text-white rounded-lg font-medium ${isSubmitting ? 'bg-orange-400 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'}`}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit Return'}
+                </button>
+                <button
+                  onClick={handleCloseReturnModal}
+                  disabled={isSubmitting}
+                  className="flex-1 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exchange Item Modal */}
+      {showExchangeModal && selectedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Exchange Item</h2>
+                <p className="text-xs text-gray-400">{getProductCode(selectedItem.productId)}</p>
+              </div>
+              <button onClick={handleCloseExchangeModal} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Original Product Info */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Original Item</p>
+                <p className="text-sm font-medium text-gray-900">{getProductCode(selectedItem.productId)}</p>
+                <p className="text-xs text-gray-600">Color: {selectedItem.color || '—'} · Size: {selectedItem.size || '—'}</p>
+                <p className="text-xs text-gray-600">Purchased: {selectedItem.quantity} · Available: {getItemAvailableQuantity(selectedItem)}</p>
+                <p className="text-xs text-gray-600">Price: {formatCurrency(selectedItem.finalPrice || selectedItem.price)}</p>
+              </div>
+
+              {/* Quantity Selector */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Exchange Quantity</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setExchangeQuantity(Math.max(1, exchangeQuantity - 1))}
+                    className="w-8 h-8 rounded border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="1"
+                    max={getItemAvailableQuantity(selectedItem)}
+                    value={exchangeQuantity}
+                    onChange={(e) => setExchangeQuantity(Math.min(getItemAvailableQuantity(selectedItem), Math.max(1, parseInt(e.target.value) || 1)))}
+                    className="w-16 text-center px-2 py-1 border border-gray-300 rounded"
+                  />
+                  <button
+                    onClick={() => setExchangeQuantity(Math.min(getItemAvailableQuantity(selectedItem), exchangeQuantity + 1))}
+                    className="w-8 h-8 rounded border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Product Search */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Select Replacement Product *</label>
+                <div className="relative">
+                  <MdSearch className="absolute left-3 top-2.5 text-gray-400 h-5 w-5" />
+                  <input
+                    type="text"
+                    placeholder="Search by product code or name..."
+                    value={exchangeProductSearch}
+                    onChange={(e) => setExchangeProductSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                </div>
+                
+                {/* Product List */}
+                <div className="mt-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
+                  {(() => {
+                    const filteredProducts = (products || []).filter(p => {
+                      const search = exchangeProductSearch.toLowerCase();
+                      return (p.code || '').toLowerCase().includes(search) || 
+                             (p.name || '').toLowerCase().includes(search);
+                    });
+                    
+                    if (filteredProducts.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-sm text-gray-500">
+                          No products found
+                        </div>
+                      );
+                    }
+                    
+                    return filteredProducts.map(p => (
+                      <button
+                        key={p._id}
+                        type="button"
+                        onClick={() => {
+                          setExchangeNewProductId(p._id);
+                          setExchangeNewColor('');
+                          setExchangeNewSize('');
+                          setExchangeProductSearch(p.code || p.name);
+                        }}
+                        className={`w-full text-left px-3 py-2 hover:bg-purple-50 border-b border-gray-100 last:border-b-0 ${
+                          exchangeNewProductId === p._id ? 'bg-purple-100 border-l-4 border-l-purple-600' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{p.code}</p>
+                            <p className="text-xs text-gray-600">{p.name}</p>
+                          </div>
+                          {exchangeNewProductId === p._id && (
+                            <MdCheckCircle className="h-5 w-5 text-purple-600" />
+                          )}
+                        </div>
+                      </button>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Replacement Color */}
+              {exchangeNewProductId && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-semibold text-gray-700">Replacement Color *</label>
+                    <button
+                      type="button"
+                      onClick={() => setUseManualColor(!useManualColor)}
+                      className="text-xs text-purple-600 hover:text-purple-800"
+                    >
+                      {useManualColor ? 'Use dropdown' : 'Type manually'}
+                    </button>
+                  </div>
+                  {useManualColor ? (
+                    <input
+                      type="text"
+                      value={exchangeNewColor}
+                      onChange={(e) => setExchangeNewColor(e.target.value)}
+                      placeholder="Enter color name"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    />
+                  ) : (
+                    <select
+                      value={exchangeNewColor}
+                      onChange={(e) => {
+                        setExchangeNewColor(e.target.value);
+                        setExchangeNewSize('');
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    >
+                      <option value="">Select a color</option>
+                      {getProductColors(exchangeNewProductId).map((color) => (
+                        <option key={color} value={color}>{color}</option>
+                      ))}
+                    </select>
+                  )}
+                  {getProductColors(exchangeNewProductId).length === 0 && !useManualColor && (
+                    <p className="text-xs text-gray-500 mt-1">No colors available - click "Type manually" to enter color</p>
+                  )}
+                </div>
+              )}
+
+              {/* Replacement Size */}
+              {exchangeNewColor && exchangeNewProductId && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-semibold text-gray-700">Replacement Size</label>
+                    <button
+                      type="button"
+                      onClick={() => setUseManualSize(!useManualSize)}
+                      className="text-xs text-purple-600 hover:text-purple-800"
+                    >
+                      {useManualSize ? 'Use dropdown' : 'Type manually'}
+                    </button>
+                  </div>
+                  {useManualSize ? (
+                    <input
+                      type="text"
+                      value={exchangeNewSize}
+                      onChange={(e) => setExchangeNewSize(e.target.value)}
+                      placeholder="Enter size (e.g., S, M, L, XL)"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    />
+                  ) : (
+                    <select
+                      value={exchangeNewSize}
+                      onChange={(e) => setExchangeNewSize(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    >
+                      <option value="">Select a size</option>
+                      {getProductSizes(exchangeNewProductId, exchangeNewColor).map((size) => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                  )}
+                  {getProductSizes(exchangeNewProductId, exchangeNewColor).length === 0 && !useManualSize && (
+                    <p className="text-xs text-gray-500 mt-1">No sizes available - click "Type manually" to enter size</p>
+                  )}
+                </div>
+              )}
+
+              {/* Exchange Summary */}
+              {exchangeNewProductId && (
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <p className="text-xs font-semibold text-blue-700 mb-2">Exchange Summary</p>
+                  <div className="text-xs text-gray-600 space-y-1">
+                    <p>Original: {getProductCode(selectedItem.productId)} - {selectedItem.color || '—'} / {selectedItem.size || '—'}</p>
+                    <p>New: {getProductCode(exchangeNewProductId)} - {exchangeNewColor || '—'} / {exchangeNewSize || '—'}</p>
+                    <p>Quantity: {exchangeQuantity}</p>
+                  </div>
+                </div>
+              )}
+
+              {modalError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-xs text-red-600">{modalError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExchangeSubmit}
+                  disabled={isSubmitting}
+                  className={`flex-1 py-2 text-sm text-white rounded-lg font-medium ${isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit Exchange'}
+                </button>
+                <button
+                  onClick={handleCloseExchangeModal}
+                  disabled={isSubmitting}
+                  className="flex-1 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>

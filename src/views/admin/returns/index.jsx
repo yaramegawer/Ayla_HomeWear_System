@@ -57,11 +57,13 @@ const ReturnsManagement = () => {
   const [exchangeOrder, setExchangeOrder]   = useState(null);
   const [exchangeOrderInput, setExchangeOrderInput] = useState('');
   const [exchangeReason, setExchangeReason] = useState('');
-  const [exchangeMap, setExchangeMap]       = useState({}); // { [originalItemId]: newProductId }
+  const [exchangeMap, setExchangeMap]       = useState({}); // { [originalItemId]: { productId, color, size } }
   const [selectingReplacementFor, setSelectingReplacementFor] = useState(null);
   const [exchangeLoading, setExchangeLoading] = useState(false);
   const [exchangeError, setExchangeError]   = useState('');
   const [productSearch, setProductSearch]   = useState('');
+  const [selectedColors, setSelectedColors] = useState({}); // { [originalItemId]: color }
+  const [selectedSizes, setSelectedSizes]   = useState({}); // { [originalItemId]: size }
 
   // ── Derived lists from real order data ─────────────────────────────────────
   const returnedOrders = useMemo(() =>
@@ -129,6 +131,8 @@ const ReturnsManagement = () => {
     setExchangeOrder(order);
     setExchangeReason('');
     setExchangeMap({});
+    setSelectedColors({});
+    setSelectedSizes({});
     setSelectingReplacementFor(null);
     setExchangeError('');
     setProductSearch('');
@@ -155,20 +159,43 @@ const ReturnsManagement = () => {
     return product ? product.code : 'No Code';
   };
 
+  // Get available colors for a product
+  const getProductColors = (productId) => {
+    const product = (products || []).find(p => p._id === productId || p.id === productId);
+    if (!product || !product.variants) return [];
+    return [...new Set(product.variants.map(v => v.color))];
+  };
+
+  // Get available sizes for a product and color
+  const getProductSizes = (productId, color) => {
+    const product = (products || []).find(p => p._id === productId || p.id === productId);
+    if (!product || !product.variants || !color) return [];
+    return [...new Set(product.variants.filter(v => v.color === color).map(v => v.size))];
+  };
+
   // ── Submit exchange ──────────────────────────────────────────────────────────
   const handleExchangeSubmit = async () => {
-    
-    // We only send the ones that have a replacement selected
-    const payloadItems = Object.entries(exchangeMap).map(([originalLineItemId, newProductId]) => {
+
+    // We only send the ones that have a replacement selected with color and size
+    const payloadItems = Object.entries(exchangeMap).map(([originalLineItemId, replacement]) => {
       const originalItem = (exchangeOrder.products || []).find(p => p._id === originalLineItemId);
       return {
         originalLineItemId,
-        newProductId,
+        newProductId: replacement.productId,
+        newColor: replacement.color,
+        newSize: replacement.size,
         quantity: originalItem ? originalItem.quantity : 1
       };
     });
 
     if (payloadItems.length === 0) { setExchangeError('Add at least one replacement product to exchange.'); return; }
+
+    // Validate that all replacements have color and size
+    const incompleteReplacements = payloadItems.filter(item => !item.newColor || !item.newSize);
+    if (incompleteReplacements.length > 0) {
+      setExchangeError('Please select both color and size for all replacement products.');
+      return;
+    }
 
     setExchangeLoading(true);
     setExchangeError('');
@@ -186,9 +213,9 @@ const ReturnsManagement = () => {
   const getExchangeTotals = () => {
     let originalTotal = 0;
     let newTotal = 0;
-    Object.entries(exchangeMap).forEach(([origId, newId]) => {
+    Object.entries(exchangeMap).forEach(([origId, replacement]) => {
       const orig = (exchangeOrder?.products || []).find(p => p._id === origId);
-      const rep = products?.find(p => p._id === newId);
+      const rep = products?.find(p => p._id === replacement.productId);
       if (orig && rep) {
         originalTotal += (orig.finalPrice || orig.price || 0) * orig.quantity;
         newTotal += (rep.price || 0) * orig.quantity;
@@ -214,7 +241,7 @@ const ReturnsManagement = () => {
             <MdRefresh className="h-4 w-4" /> Process Return
           </button>
           <button
-            onClick={() => { setShowExchange(true); setExchangeOrder(null); setExchangeOrderInput(''); setExchangeError(''); setExchangeMap({}); setExchangeReason(''); }}
+            onClick={() => { setShowExchange(true); setExchangeOrder(null); setExchangeOrderInput(''); setExchangeError(''); setExchangeMap({}); setSelectedColors({}); setSelectedSizes({}); setExchangeReason(''); }}
             className="flex items-center gap-1.5 px-3 py-2 text-sm bg-purple-600 text-white rounded-xl hover:bg-purple-700 font-medium"
           >
             <MdSwapHoriz className="h-4 w-4" /> Create Exchange
@@ -514,44 +541,51 @@ const ReturnsManagement = () => {
                   <p className="text-sm font-semibold text-gray-700 mb-2">Original Order Items</p>
                   <div className="space-y-3">
                     {(exchangeOrder.products || []).map((item, i) => {
-                      const replacedWithId = exchangeMap[item._id];
-                      const replacedProduct = replacedWithId ? products.find(p => p._id === replacedWithId) : null;
+                      const replacement = exchangeMap[item._id];
+                      const replacedProduct = replacement ? products.find(p => p._id === replacement.productId) : null;
                       const isSelecting = selectingReplacementFor === item._id;
 
                       return (
-                        <div key={i} className={`border rounded-xl p-3 ${replacedWithId ? 'border-purple-300 bg-purple-50' : 'border-gray-200'}`}>
+                        <div key={i} className={`border rounded-xl p-3 ${replacement ? 'border-purple-300 bg-purple-50' : 'border-gray-200'}`}>
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
                               <p className="text-sm font-medium text-gray-900 pr-2">
-                                <span className="font-mono text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded text-xs mr-1">{getProductCode(item.productId)}</span> 
+                                <span className="font-mono text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded text-xs mr-1">{getProductCode(item.productId)}</span>
                                 {item.color} / {item.size} × {item.quantity}
                               </p>
                               <p className="text-xs text-gray-500 mt-1">{formatCurrency(item.finalPrice * item.quantity)}</p>
                             </div>
-                            
-                            {!replacedWithId && !isSelecting && (
+
+                            {!replacement && !isSelecting && (
                               <button type="button" onClick={() => setSelectingReplacementFor(item._id)} className="text-xs bg-white border border-gray-300 px-2 py-1.5 flex items-center gap-1 rounded shadow-sm hover:bg-gray-50 font-medium">
                                 <MdSwapHoriz className="h-4 w-4 text-purple-600" /> Replace Item
                               </button>
                             )}
-                            
-                            {replacedWithId && (
+
+                            {replacement && (
                               <button type="button" onClick={() => {
                                 const newMap = {...exchangeMap};
                                 delete newMap[item._id];
                                 setExchangeMap(newMap);
+                                const newColors = {...selectedColors};
+                                delete newColors[item._id];
+                                setSelectedColors(newColors);
+                                const newSizes = {...selectedSizes};
+                                delete newSizes[item._id];
+                                setSelectedSizes(newSizes);
                               }} className="text-xs text-red-500 hover:underline mt-1">
                                 Clear Replacement
                               </button>
                             )}
                           </div>
-                          
-                          {replacedWithId && replacedProduct && (
+
+                          {replacement && replacedProduct && (
                             <div className="mt-3 pt-3 border-t border-purple-200/60 text-sm text-purple-800 flex items-start gap-2">
                               <MdCheckCircle className="h-4 w-4 mt-0.5" />
                               <div className="leading-tight">
                                 <span className="text-xs text-purple-600 uppercase font-bold tracking-wider block mb-0.5">Replaced With</span>
                                 <span className="font-bold">{replacedProduct.code}</span> - {replacedProduct.name}
+                                <span className="text-xs text-gray-600 ml-2">({replacement.color} / {replacement.size})</span>
                               </div>
                             </div>
                           )}
@@ -578,8 +612,9 @@ const ReturnsManagement = () => {
                                     key={p._id}
                                     type="button"
                                     onClick={() => {
-                                      setExchangeMap(prev => ({...prev, [item._id]: p._id}));
-                                      setSelectingReplacementFor(null);
+                                      setExchangeMap(prev => ({...prev, [item._id]: { productId: p._id, color: '', size: '' }}));
+                                      setSelectedColors(prev => ({...prev, [item._id]: ''}));
+                                      setSelectedSizes(prev => ({...prev, [item._id]: ''}));
                                       setProductSearch('');
                                     }}
                                     className="w-full text-left p-2 hover:bg-purple-50 rounded border border-transparent hover:border-purple-200 flex justify-between items-center text-xs transition-colors"
@@ -592,6 +627,58 @@ const ReturnsManagement = () => {
                                 ))}
                                 {filteredProducts.length === 0 && <p className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded">No products found for "{productSearch}".</p>}
                               </div>
+
+                              {/* Color and Size Selection */}
+                              {replacement && (
+                                <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Select Color *</label>
+                                    <select
+                                      value={selectedColors[item._id] || ''}
+                                      onChange={(e) => {
+                                        setSelectedColors(prev => ({...prev, [item._id]: e.target.value}));
+                                        setSelectedSizes(prev => ({...prev, [item._id]: ''}));
+                                        setExchangeMap(prev => ({...prev, [item._id]: { ...prev[item._id], color: e.target.value, size: '' }}));
+                                      }}
+                                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                    >
+                                      <option value="">Select a color</option>
+                                      {getProductColors(replacement.productId).map((color) => (
+                                        <option key={color} value={color}>{color}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {selectedColors[item._id] && (
+                                    <div>
+                                      <label className="block text-xs font-semibold text-gray-700 mb-1">Select Size *</label>
+                                      <select
+                                        value={selectedSizes[item._id] || ''}
+                                        onChange={(e) => {
+                                          setSelectedSizes(prev => ({...prev, [item._id]: e.target.value}));
+                                          setExchangeMap(prev => ({...prev, [item._id]: { ...prev[item._id], size: e.target.value }}));
+                                        }}
+                                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                      >
+                                        <option value="">Select a size</option>
+                                        {getProductSizes(replacement.productId, selectedColors[item._id]).map((size) => (
+                                          <option key={size} value={size}>{size}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+
+                                  {selectedColors[item._id] && selectedSizes[item._id] && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectingReplacementFor(null)}
+                                      className="w-full mt-2 px-3 py-1.5 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 font-medium"
+                                    >
+                                      Confirm Selection
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
