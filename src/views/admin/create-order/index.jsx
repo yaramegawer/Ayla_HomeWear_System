@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useProduct } from '../../../contexts/ProductContext';
 import { useOrder } from '../../../contexts/OrderContext';
+import ProductImage from '../../../components/ProductImage';
+import { useDebouncedValue } from '../../../utils/useDebouncedValue';
 import { createOrder, updateOrderDetails, confirmDeposit } from '../../../services/orderService';
 import { MdAdd, MdRemove, MdDelete, MdSearch, MdShoppingCart, MdStore, MdCheckCircle, MdPrint } from 'react-icons/md';
 
@@ -17,7 +19,15 @@ const STORE_CUSTOMER = {
 };
 
 const CreateOrder = () => {
-  const { products, fetchProducts } = useProduct();
+  const {
+    products,
+    allProducts,
+    loading,
+    pagination,
+    fetchProducts,
+    loadAllProducts,
+    searchAllProducts,
+  } = useProduct();
   const { 
     orderItems, 
     setOrderItems,
@@ -32,6 +42,7 @@ const CreateOrder = () => {
   } = useOrder();
 
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -39,45 +50,29 @@ const CreateOrder = () => {
   const [lastOrder, setLastOrder] = useState(null);
   const [cashTendered, setCashTendered] = useState('');
 
-  useEffect(() => {
-    fetchProducts(1, '', '', 'all', true);
-    // eslint-disable-next-line
-  }, []);
-
-  // Filter products locally for search across all products!
-  const displayProducts = useMemo(() => {
-    if (!products || !Array.isArray(products)) return [];
-    
-    // Only return objects
-    const validProducts = products.filter(p => p && typeof p === 'object');
-    
-    if (!search || !search.trim()) {
-      return validProducts;
-    }
-    
-    const query = search.trim().toLowerCase();
-    return validProducts.filter(p => {
-      const pName = (p.name || '').toLowerCase();
-      const pCode = (p.code || '').toLowerCase();
-      const pCategory = (p.category || '').toLowerCase();
-      
-      return pName.includes(query) || pCode.includes(query) || pCategory.includes(query);
-    });
-  }, [products, search]);
-
-  // Client-side pagination for the product catalog
   const catalogPerPage = 10;
   const [catalogPage, setCatalogPage] = useState(1);
-  const catalogTotalPages = Math.ceil(displayProducts.length / catalogPerPage) || 1;
-  const paginatedCatalog = displayProducts.slice(
-    (catalogPage - 1) * catalogPerPage,
-    catalogPage * catalogPerPage
-  );
 
-  // Reset catalog page when search changes
+  useEffect(() => {
+    if (debouncedSearch.trim()) {
+      searchAllProducts(debouncedSearch.trim(), catalogPage, '', '', true);
+    } else {
+      fetchProducts(catalogPage, '', '', true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, catalogPage]);
+
   useEffect(() => {
     setCatalogPage(1);
-  }, [search]);
+  }, [debouncedSearch]);
+
+  const displayProducts = useMemo(() => {
+    if (!products || !Array.isArray(products)) return [];
+    return products.filter((p) => p && typeof p === 'object');
+  }, [products]);
+
+  const catalogTotalPages = pagination.totalPages || 1;
+  const paginatedCatalog = displayProducts;
 
   // Totals
   const { subtotal, totalQuantity, itemCount } = calculateOrderTotals();
@@ -209,7 +204,13 @@ const CreateOrder = () => {
                   {/* Thumbnail */}
                   <div className="w-14 h-14 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden">
                     {product.defaultImage?.url ? (
-                      <img src={product.defaultImage.url} alt={product.name} className="w-full h-full object-cover" />
+                      <ProductImage
+                        src={product.defaultImage.url}
+                        alt={product.name}
+                        className="w-full h-full object-cover"
+                        width={112}
+                        height={112}
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">IMG</div>
                     )}

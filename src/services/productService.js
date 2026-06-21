@@ -1,5 +1,7 @@
 const BASE_URL = 'https://el-mawardy-store.vercel.app/product';
 
+const PARALLEL_BATCH_SIZE = 6;
+
 // Get all products with pagination and filtering
 export const getAllProducts = async (page = 1, category = '', season = '', limit = '', admin = false) => {
   try {
@@ -32,6 +34,39 @@ export const getAllProducts = async (page = 1, category = '', season = '', limit
     }
     throw error;
   }
+};
+
+/** Fetch every product page in parallel batches (~5s vs ~25s sequential). */
+export const fetchAllProductsParallel = async (category = '', season = '', admin = false) => {
+  const first = await getAllProducts(1, category, season, '', admin);
+  const allProducts = [...(first.products || [])];
+  const totalPages = first.pagination?.totalPages || 1;
+
+  if (totalPages <= 1) {
+    return { products: allProducts, pagination: first.pagination };
+  }
+
+  const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+  for (let i = 0; i < remainingPages.length; i += PARALLEL_BATCH_SIZE) {
+    const batch = remainingPages.slice(i, i + PARALLEL_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map((page) => getAllProducts(page, category, season, '', admin))
+    );
+    results.forEach((response) => {
+      if (response?.products?.length) {
+        allProducts.push(...response.products);
+      }
+    });
+  }
+
+  return {
+    products: allProducts,
+    pagination: {
+      ...(first.pagination || {}),
+      totalProducts: allProducts.length,
+    },
+  };
 };
 
 // Get product by ID

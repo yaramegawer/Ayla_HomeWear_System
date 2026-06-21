@@ -30,7 +30,13 @@ const StatusBadge = ({ status }) => {
 
 const ReturnsManagement = () => {
   const { orders, loading, fetchOrders } = useOrder();
-  const { products } = useProduct();
+  const { products, allProducts, loadAllProducts } = useProduct();
+  const catalog = allProducts.length > 0 ? allProducts : products;
+
+  React.useEffect(() => {
+    loadAllProducts(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [tab, setTab]         = useState('returns'); // 'returns' | 'exchanges'
   const [search, setSearch]   = useState('');
@@ -111,13 +117,13 @@ const ReturnsManagement = () => {
 
   // Filtered products for exchange picker
   const filteredProducts = useMemo(() => {
-    if (!Array.isArray(products)) return [];
+    if (!Array.isArray(catalog)) return [];
     const q = productSearch.toLowerCase();
-    return products.filter(p =>
+    return catalog.filter(p =>
       (p.name || '').toLowerCase().includes(q) ||
       (p.code || '').toLowerCase().includes(q)
     );
-  }, [products, productSearch]);
+  }, [catalog, productSearch]);
 
   // ── Open modals ─────────────────────────────────────────────────────────────
   const openReturn = (order) => {
@@ -155,20 +161,20 @@ const ReturnsManagement = () => {
   };
 
   const getProductCode = (productId) => {
-    const product = (products || []).find(p => p._id === productId || p.id === productId);
+    const product = (catalog || []).find(p => p._id === productId || p.id === productId);
     return product ? product.code : 'No Code';
   };
 
   // Get available colors for a product
   const getProductColors = (productId) => {
-    const product = (products || []).find(p => p._id === productId || p.id === productId);
+    const product = (catalog || []).find(p => p._id === productId || p.id === productId);
     if (!product || !product.variants) return [];
     return [...new Set(product.variants.map(v => v.color))];
   };
 
   // Get available sizes for a product and color
   const getProductSizes = (productId, color) => {
-    const product = (products || []).find(p => p._id === productId || p.id === productId);
+    const product = (catalog || []).find(p => p._id === productId || p.id === productId);
     if (!product || !product.variants || !color) return [];
     return [...new Set(product.variants.filter(v => v.color === color).map(v => v.size))];
   };
@@ -215,7 +221,7 @@ const ReturnsManagement = () => {
     let newTotal = 0;
     Object.entries(exchangeMap).forEach(([origId, replacement]) => {
       const orig = (exchangeOrder?.products || []).find(p => p._id === origId);
-      const rep = products?.find(p => p._id === replacement.productId);
+      const rep = catalog?.find(p => p._id === replacement.productId);
       if (orig && rep) {
         originalTotal += (orig.finalPrice || orig.price || 0) * orig.quantity;
         newTotal += (rep.price || 0) * orig.quantity;
@@ -368,8 +374,8 @@ const ReturnsManagement = () => {
                       <td className="px-4 py-3 min-w-[260px]">
                         <div className="space-y-1.5 shadow-sm max-h-32 overflow-y-auto pr-1 custom-scrollbar">
                           {(order.exchangedProducts || []).map((exc, i) => {
-                            const origProd = products?.find(p => p._id === exc.originalProductId);
-                            const newProd = products?.find(p => p._id === exc.newProductId);
+                            const origProd = catalog?.find(p => p._id === exc.originalProductId);
+                            const newProd = catalog?.find(p => p._id === exc.newProductId);
                             const adj = exc.priceAdjustment || 0;
                             return (
                               <div key={i} className={`text-[11px] border p-1.5 rounded-md flex flex-col gap-1 ${adj > 0 ? 'bg-orange-50/50 border-orange-100' : adj < 0 ? 'bg-green-50/50 border-green-100' : 'bg-gray-50 border-gray-100'}`}>
@@ -542,7 +548,7 @@ const ReturnsManagement = () => {
                   <div className="space-y-3">
                     {(exchangeOrder.products || []).map((item, i) => {
                       const replacement = exchangeMap[item._id];
-                      const replacedProduct = replacement ? products.find(p => p._id === replacement.productId) : null;
+                      const replacedProduct = replacement ? catalog.find(p => p._id === replacement.productId) : null;
                       const isSelecting = selectingReplacementFor === item._id;
 
                       return (

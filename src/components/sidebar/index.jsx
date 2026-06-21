@@ -3,7 +3,7 @@
 import { HiX } from "react-icons/hi";
 import Links from "./components/Links";
 
-import routes from "routes.js";
+import routeConfig from "routeConfig.js";
 
 const Sidebar = ({ open, onClose }) => {
   // Read user role from local storage strictly for UI rendering
@@ -13,7 +13,7 @@ const Sidebar = ({ open, onClose }) => {
     if (user.role === 'cashier') isCashier = true;
   } catch (e) {}
 
-  const filteredRoutes = routes.filter(r => {
+  const filteredRoutes = routeConfig.filter(r => {
     if (isCashier && r.path === 'finance') return false;
     if (r.path === 'returns') return false;
     if (r.path === 'discounts') return false;

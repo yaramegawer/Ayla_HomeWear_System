@@ -1,19 +1,27 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useProduct } from '../../../contexts/ProductContext';
+import ProductImage from '../../../components/ProductImage';
 import { MdLocalOffer, MdPercent, MdAttachMoney, MdSearch } from 'react-icons/md';
 
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-EG', { style: 'currency', currency: 'EGP' }).format(amount || 0);
 
 const DiscountsManagement = () => {
-  const { products, loading } = useProduct();
+  const { products, allProducts, loading, allProductsLoading, loadAllProducts } = useProduct();
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    loadAllProducts(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const catalogProducts = allProducts.length > 0 ? allProducts : products;
 
   // Only products with a discount > 0
   const discountedProducts = useMemo(() => {
-    if (!Array.isArray(products)) return [];
-    return products.filter(p => (p.discount || 0) > 0);
-  }, [products]);
+    if (!Array.isArray(catalogProducts)) return [];
+    return catalogProducts.filter(p => (p.discount || 0) > 0);
+  }, [catalogProducts]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -119,7 +127,15 @@ const DiscountsManagement = () => {
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0">
                             {product.defaultImage?.url
-                              ? <img src={product.defaultImage.url} alt={product.name} className="w-full h-full object-cover" />
+                              ? (
+                                <ProductImage
+                                  src={product.defaultImage.url}
+                                  alt={product.name}
+                                  className="w-full h-full object-cover"
+                                  width={80}
+                                  height={80}
+                                />
+                              )
                               : <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">IMG</div>
                             }
                           </div>

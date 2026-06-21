@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import imageCompression from 'browser-image-compression';
 import { useProduct } from '../../../contexts/ProductContext';
+import ProductImage from '../../../components/ProductImage';
+import { useDebouncedValue } from '../../../utils/useDebouncedValue';
 import {
   MdSearch,
   MdAdd,
@@ -12,17 +13,23 @@ import {
 const ProductsManagement = () => {
   const {
     products,
+    allProducts,
     loading,
+    allProductsLoading,
     error,
+    pagination,
     fetchProducts,
+    loadAllProducts,
     searchAllProducts,
     addProduct,
     editProduct,
     updateProductImagesOnly,
     removeProduct,
+    invalidateAllProducts,
     clearError
   } = useProduct();
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebouncedValue(searchTerm);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterSeason, setFilterSeason] = useState('all');
   const [showForm, setShowForm] = useState(false);
@@ -45,103 +52,50 @@ const ProductsManagement = () => {
     visible: true
   });
 
-  const itemsPerPage = 12;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Fetch all products exactly once on mount, or when we explicitly refresh
-  const fetchData = async () => {
-    try {
-      await fetchProducts(1, '', '', 'all', true);
-    } catch (error) {
-      console.error('Fetch error:', error);
-    }
-  };
+  const categoryParam = filterCategory === 'all' ? '' : filterCategory;
+  const seasonParam = filterSeason === 'all' ? '' : filterSeason;
 
+  // Load stats in background (parallel, ~5s) — table shows after first page (~1.5s)
+  useEffect(() => {
+    loadAllProducts(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Server-side pagination — one API call per page
+  useEffect(() => {
+    if (debouncedSearch.trim()) {
+      searchAllProducts(debouncedSearch.trim(), currentPage, categoryParam, seasonParam, true);
+    } else {
+      fetchProducts(currentPage, categoryParam, seasonParam, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, debouncedSearch, categoryParam, seasonParam]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, filterCategory, filterSeason]);
+
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
+  };
 
   // Temporary string states for colors and sizes inputs
   const [colorInput, setColorInput] = useState('');
   const [sizeInput, setSizeInput] = useState('');
 
-  // Categories
   const categories = ['pajamas', 'lingerie', 'nightwear', 'robes', 'accessories'];
-
-  // Seasons
   const seasons = ['summer', 'winter', 'spring', 'fall', 'all'];
 
-  // Initial fetch
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const totalPages = pagination.totalPages || 1;
+  const totalProducts = pagination.totalProducts || 0;
+  const displayProducts = products;
 
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterCategory, filterSeason]);
-
-  // Instant search handler - triggers immediately on input change
-  const handleSearchChange = async (e) => {
-    const newSearchTerm = e.target.value;
-    setSearchTerm(newSearchTerm);
-    
-    // If we have products loaded, use local filtering for instant response
-    if (products && products.length > 0) {
-      return; // Local filtering will handle the display
-    }
-    
-    // If no products loaded yet, fetch from server
-    try {
-      if (newSearchTerm && newSearchTerm.trim()) {
-        console.log('Searching for:', newSearchTerm.trim());
-        const category = filterCategory === 'all' ? '' : filterCategory;
-        const season = filterSeason === 'all' ? '' : filterSeason;
-        await searchAllProducts(newSearchTerm.trim(), 1, category, season, true);
-      } else {
-        const category = filterCategory === 'all' ? '' : filterCategory;
-        const season = filterSeason === 'all' ? '' : filterSeason;
-        await fetchProducts(1, category, season, 'all', true);
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-    }
-  };
-
-  // Handle page change
-  const handlePageChange = (newPage) => {
-    setCurrentPage(newPage);
-  };
-
-  // Display products filtered locally
-  const filteredProducts = useMemo(() => {
-    if (!products || !Array.isArray(products)) return [];
-
-    return products.filter(product => {
-      if (!product || typeof product !== 'object') return false;
-
-      const matchCategory = filterCategory === 'all' || product.category === filterCategory;
-      const matchSeason = filterSeason === 'all' || product.season === filterSeason;
-
-      let matchSearch = true;
-      if (searchTerm && searchTerm.trim()) {
-        const query = searchTerm.trim().toLowerCase();
-        const pName = (product.name || '').toLowerCase();
-        const pCode = (product.code || '').toLowerCase();
-        matchSearch = pName.includes(query) || pCode.includes(query);
-      }
-
-      return matchCategory && matchSeason && matchSearch;
-    });
-  }, [products, searchTerm, filterCategory, filterSeason]);
-
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  // Inventory Statistics
+  // Inventory statistics — uses full catalog when background load finishes
+  const statsSource = allProducts.length > 0 ? allProducts : products;
   const inventoryStats = useMemo(() => {
-    if (!products || !Array.isArray(products)) return {
+    if (!statsSource || !Array.isArray(statsSource)) return {
       totalProducts: 0,
       totalStock: 0,
       lowStockProducts: 0,
@@ -156,7 +110,7 @@ const ProductsManagement = () => {
     const categoryStats = {};
     const productStockLevels = [];
 
-    products.forEach(product => {
+    statsSource.forEach(product => {
       // Calculate total stock for this product
       let productStock = 0;
       
@@ -197,25 +151,26 @@ const ProductsManagement = () => {
       }));
 
     return {
-      totalProducts: products.length,
+      totalProducts: allProducts.length > 0 ? statsSource.length : totalProducts,
       totalStock,
       lowStockProducts,
       outOfStockProducts,
       mostStockedProducts,
       categories: categoryStats
     };
-  }, [products]);
+  }, [statsSource, allProducts.length, totalProducts]);
 
 
 
   // Helper for image compression
   const compressImage = async (imageFile) => {
     const options = {
-      maxSizeMB: 0.8, // Relaxed size for faster 1-pass compression
+      maxSizeMB: 0.8,
       maxWidthOrHeight: 1200,
       useWebWorker: true,
     };
     try {
+      const imageCompression = (await import('browser-image-compression')).default;
       return await imageCompression(imageFile, options);
     } catch (error) {
       console.error('Error compressing image:', error);
@@ -661,12 +616,18 @@ const ProductsManagement = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {paginatedProducts.map(product => {
+          {displayProducts.map(product => {
             return (
               <div key={product._id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
                 <div className="h-48 bg-gray-200 flex items-center justify-center">
                   {product.defaultImage && product.defaultImage.url ? (
-                    <img src={product.defaultImage.url} alt={product.name || 'Product'} className="h-full w-full object-cover" />
+                    <ProductImage
+                      src={product.defaultImage.url}
+                      alt={product.name || 'Product'}
+                      className="h-full w-full object-cover"
+                      width={400}
+                      height={192}
+                    />
                   ) : (
                     <MdImage className="h-12 w-12 text-gray-400" />
                   )}
@@ -757,7 +718,7 @@ const ProductsManagement = () => {
         </div>
       )}
 
-      {paginatedProducts.length === 0 && !loading && (
+      {displayProducts.length === 0 && !loading && (
         <div className="text-center py-12">
           <p className="text-gray-500">No products found on this page matching your criteria.</p>
         </div>
@@ -768,18 +729,19 @@ const ProductsManagement = () => {
         <div className="bg-white rounded-lg shadow-md px-6 py-4 mt-6 flex items-center justify-between">
           <p className="text-sm text-gray-700">
             Page <span className="font-medium">{currentPage}</span> of <span className="font-medium">{totalPages}</span>
-            <span className="ml-2 text-gray-400">({filteredProducts.length} total products)</span>
+            <span className="ml-2 text-gray-400">({totalProducts} total products)</span>
+            {allProductsLoading && <span className="ml-2 text-xs text-purple-500">Loading stats…</span>}
           </p>
           <div className="flex gap-2">
             <button
-              onClick={() => handlePageChange(currentPage - 1)}
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
               disabled={currentPage <= 1}
               className={`px-4 py-2 text-sm border border-gray-300 rounded-md font-medium ${currentPage <= 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
             >
               Previous
             </button>
             <button
-              onClick={() => handlePageChange(currentPage + 1)}
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
               disabled={currentPage >= totalPages}
               className={`px-4 py-2 text-sm border border-gray-300 rounded-md font-medium ${currentPage >= totalPages ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
             >

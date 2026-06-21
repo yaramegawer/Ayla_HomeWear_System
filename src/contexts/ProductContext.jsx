@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback } from 'react';
 import {
   getAllProducts,
   getProductById,
@@ -7,84 +7,97 @@ import {
   createProduct,
   updateProduct,
   updateProductImages,
-  deleteProduct
+  deleteProduct,
+  fetchAllProductsParallel,
 } from '../services/productService';
 
 const ProductContext = createContext();
 
 export const ProductProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [allProductsLoading, setAllProductsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pagination, setPagination] = useState({
     totalProducts: 0,
     totalPages: 0,
     currentPage: 1,
     hasNextPage: false,
-    hasPrevPage: false
+    hasPrevPage: false,
   });
 
-  // Fetch all products
-  const fetchProducts = async (page = 1, category = '', season = '', limit = '', admin = false) => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      if (limit === 'all' || limit === 1000 || limit === '1000') {
-        let allProds = [];
-        let currentPage = 1;
-        let totalPages = 1;
-        let firstPag = null;
-        
-        do {
-          console.log(`Fetching page ${currentPage} of ${totalPages}`);
-          const response = await getAllProducts(currentPage, category, season, '', admin);
-          
-          if (!response || !response.products || !Array.isArray(response.products)) {
-            console.error('Invalid products response:', response);
-            break;
-          }
-          
-          allProds = [...allProds, ...response.products];
-          totalPages = (response.pagination && response.pagination.totalPages) ? response.pagination.totalPages : 1;
-          if (currentPage === 1) firstPag = response.pagination;
-          
-          currentPage++;
-          
-          // Safety break to prevent infinite loops (max 50 pages)
-          if (currentPage > 50) break;
-          
-        } while (currentPage <= totalPages);
-        
-        console.log(`Total products fetched: ${allProds.length}`);
-        
-        setProducts(allProds);
-        setPagination({
-          ...(firstPag || {}),
-          totalProducts: allProds.length,
-          totalPages: Math.ceil(allProds.length / 10) || 1,
-          currentPage: 1,
-          hasNextPage: allProds.length > 10,
-          hasPrevPage: false
-        });
-      } else {
-        const response = await getAllProducts(page, category, season, limit, admin);
-        setProducts(response?.products || []);
-        setPagination(response?.pagination || { totalProducts: 0, totalPages: 1, currentPage: 1 });
-      }
-    } catch (err) {
-      console.error('Error in fetchProducts:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const pageFetchRef = useRef(null);
+  const allFetchRef = useRef(null);
 
-  // Get single product
+  /** Fetch a single API page — ~1.5s for 20 products (fast initial render). */
+  const fetchProducts = useCallback(async (page = 1, category = '', season = '', admin = false) => {
+    const key = `${page}-${category}-${season}-${admin}`;
+    if (pageFetchRef.current?.key === key) {
+      return pageFetchRef.current.promise;
+    }
+
+    const promise = (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await getAllProducts(page, category, season, '', admin);
+        setProducts(response?.products || []);
+        setPagination(response?.pagination || {
+          totalProducts: 0,
+          totalPages: 1,
+          currentPage: page,
+          hasNextPage: false,
+          hasPrevPage: page > 1,
+        });
+        return response;
+      } catch (err) {
+        console.error('Error in fetchProducts:', err);
+        setError(err.message);
+        throw err;
+      } finally {
+        setLoading(false);
+        pageFetchRef.current = null;
+      }
+    })();
+
+    pageFetchRef.current = { key, promise };
+    return promise;
+  }, []);
+
+  /** Fetch full catalog in parallel — for stats, inventory filters, create-order search. */
+  const loadAllProducts = useCallback(async (admin = true, force = false) => {
+    if (!force && allProducts.length > 0) {
+      return allProducts;
+    }
+    if (allFetchRef.current) {
+      return allFetchRef.current;
+    }
+
+    const promise = (async () => {
+      setAllProductsLoading(true);
+      setError(null);
+      try {
+        const response = await fetchAllProductsParallel('', '', admin);
+        setAllProducts(response.products || []);
+        return response.products || [];
+      } catch (err) {
+        console.error('Error loading all products:', err);
+        setError(err.message);
+        throw err;
+      } finally {
+        setAllProductsLoading(false);
+        allFetchRef.current = null;
+      }
+    })();
+
+    allFetchRef.current = promise;
+    return promise;
+  }, [allProducts.length]);
+
   const getProduct = async (id) => {
     setLoading(true);
     setError(null);
-    
     try {
       const response = await getProductById(id);
       return response.product;
@@ -96,11 +109,9 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  // Search product by code
   const searchProduct = async (code) => {
     setLoading(true);
     setError(null);
-    
     try {
       const response = await searchProductByCode(code);
       return response.product;
@@ -112,15 +123,19 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  // Search products across all products
   const searchAllProducts = async (query, page = 1, category = '', season = '', admin = false) => {
     setLoading(true);
     setError(null);
-    
     try {
       const response = await searchProducts(query, page, category, season, admin);
-      setProducts(response.products);
-      setPagination(response.pagination);
+      setProducts(response.products || []);
+      setPagination(response.pagination || {
+        totalProducts: response.products?.length || 0,
+        totalPages: 1,
+        currentPage: page,
+        hasNextPage: false,
+        hasPrevPage: page > 1,
+      });
       return response;
     } catch (err) {
       setError(err.message);
@@ -130,16 +145,19 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  // Create new product
+  const invalidateAllProducts = () => {
+    setAllProducts([]);
+    allFetchRef.current = null;
+  };
+
   const addProduct = async (formData) => {
     setLoading(true);
     setError(null);
-    
     try {
       const response = await createProduct(formData);
-      // Add new product to local state
-      if (response && response.product) {
-        setProducts(prev => [response.product, ...prev]);
+      if (response?.product) {
+        setProducts((prev) => [response.product, ...prev]);
+        setAllProducts((prev) => [response.product, ...prev]);
       }
       return response;
     } catch (err) {
@@ -150,16 +168,15 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  // Update product
   const editProduct = async (id, productData) => {
     setLoading(true);
     setError(null);
-    
     try {
       const response = await updateProduct(id, productData);
-      // Update product in local state
-      if (response && response.product) {
-        setProducts(prev => prev.map(p => p._id === id ? { ...p, ...response.product } : p));
+      if (response?.product) {
+        const merge = (prev) => prev.map((p) => (p._id === id ? { ...p, ...response.product } : p));
+        setProducts(merge);
+        setAllProducts(merge);
       }
       return response;
     } catch (err) {
@@ -170,16 +187,15 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  // Update product images only
   const updateProductImagesOnly = async (id, formData) => {
     setLoading(true);
     setError(null);
-    
     try {
       const response = await updateProductImages(id, formData);
-      // Update product in local state
-      if (response && response.product) {
-        setProducts(prev => prev.map(p => p._id === id ? { ...p, ...response.product } : p));
+      if (response?.product) {
+        const merge = (prev) => prev.map((p) => (p._id === id ? { ...p, ...response.product } : p));
+        setProducts(merge);
+        setAllProducts(merge);
       }
       return response;
     } catch (err) {
@@ -190,15 +206,14 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  // Delete product
   const removeProduct = async (id) => {
     setLoading(true);
     setError(null);
-    
     try {
       await deleteProduct(id);
-      // Remove product from local state
-      setProducts(prev => prev.filter(p => p._id !== id));
+      const filter = (prev) => prev.filter((p) => p._id !== id);
+      setProducts(filter);
+      setAllProducts(filter);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -207,20 +222,17 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  // Clear error
   const clearError = () => setError(null);
-
-  // Initial fetch
-  useEffect(() => {
-    fetchProducts();
-  }, []);
 
   const value = {
     products,
+    allProducts,
     loading,
+    allProductsLoading,
     error,
     pagination,
     fetchProducts,
+    loadAllProducts,
     getProduct,
     searchProduct,
     searchAllProducts,
@@ -228,7 +240,8 @@ export const ProductProvider = ({ children }) => {
     editProduct,
     updateProductImagesOnly,
     removeProduct,
-    clearError
+    invalidateAllProducts,
+    clearError,
   };
 
   return (

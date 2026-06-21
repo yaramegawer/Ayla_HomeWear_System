@@ -59,13 +59,14 @@ const parseError = (message = '') => {
 
 const OrdersManagement = () => {
   const { orders, loading, error, fetchOrders, updateStatus, confirmDeposit, removeOrder, clearError } = useOrder();
-  const { products, fetchProducts } = useProduct();
+  const { products, allProducts, loadAllProducts } = useProduct();
 
   // Look up a product's code by its _id
   const getProductCode = (productId) => {
-    if (!productId || !Array.isArray(products)) return '—';
+    const catalog = allProducts.length > 0 ? allProducts : products;
+    if (!productId || !Array.isArray(catalog)) return '—';
     const id = productId?.toString?.();
-    const found = products.find(p => p._id?.toString() === id);
+    const found = catalog.find(p => p._id?.toString() === id);
     return found?.code || id?.slice(-6) || '—';
   };
   const [searchTerm, setSearchTerm]       = useState('');
@@ -101,10 +102,7 @@ const OrdersManagement = () => {
 
   useEffect(() => {
     fetchOrders();
-    // Fetch all products for exchange modal
-    fetchProducts(1, '', '', 'all', true).then(() => {
-      console.log('Products loaded:', products.length);
-    });
+    loadAllProducts(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

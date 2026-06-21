@@ -1,5 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { useProduct } from '../../../contexts/ProductContext';
+import ProductImage from '../../../components/ProductImage';
+import { useDebouncedValue } from '../../../utils/useDebouncedValue';
 import {
   MdSearch,
   MdWarning,
@@ -9,12 +11,23 @@ import {
   MdRemove,
   MdUpdate
 } from 'react-icons/md';
-import Chart from 'react-apexcharts';
+
+const Chart = React.lazy(() => import('react-apexcharts'));
 
 const InventoryManagement = () => {
-  const { products, editProduct, fetchProducts } = useProduct();
+  const {
+    products,
+    allProducts,
+    loading,
+    allProductsLoading,
+    pagination,
+    fetchProducts,
+    loadAllProducts,
+    editProduct,
+  } = useProduct();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebouncedValue(searchTerm);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStock, setFilterStock] = useState('all');
   const [showStockUpdate, setShowStockUpdate] = useState(false);
@@ -23,25 +36,30 @@ const InventoryManagement = () => {
   const [updateType, setUpdateType] = useState('add');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-  
-  // Handle page change removed to fix warning
+
+  const useServerPagination = filterStock === 'all' && !debouncedSearch.trim();
+  const categoryParam = filterCategory === 'all' ? '' : filterCategory;
 
   useEffect(() => {
-    fetchProducts(1, '', '', 1000);
+    loadAllProducts(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterCategory, filterStock]);
+    if (!useServerPagination) return;
+    fetchProducts(currentPage, categoryParam, '', true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useServerPagination, currentPage, categoryParam]);
 
-  // Categories
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, filterCategory, filterStock]);
+
   const categories = ['pajamas', 'lingerie', 'nightwear', 'robes'];
 
-  // Filter products
-  const filteredProducts = useMemo(() => {
-    if (!products || !Array.isArray(products)) return [];
-    return products.filter(product => {
+  const filterList = (source) => {
+    if (!source || !Array.isArray(source)) return [];
+    return source.filter((product) => {
       if (!product || typeof product !== 'object') return false;
 
       const productName = (product.name || '').toLowerCase();
@@ -49,51 +67,61 @@ const InventoryManagement = () => {
       const productStock = product.stock || 0;
 
       const matchesSearch =
-        productName.includes(searchTerm.toLowerCase()) ||
-        productCategory.includes(searchTerm.toLowerCase());
+        !debouncedSearch.trim() ||
+        productName.includes(debouncedSearch.toLowerCase()) ||
+        productCategory.includes(debouncedSearch.toLowerCase());
 
       const matchesCategory = filterCategory === 'all' || product.category === filterCategory;
 
       let matchesStock = true;
-      if (filterStock === 'low') {
-        matchesStock = productStock <= 10;
-      } else if (filterStock === 'out') {
-        matchesStock = productStock === 0;
-      } else if (filterStock === 'normal') {
-        matchesStock = productStock > 10;
-      }
+      if (filterStock === 'low') matchesStock = productStock <= 10 && productStock > 0;
+      else if (filterStock === 'out') matchesStock = productStock === 0;
+      else if (filterStock === 'normal') matchesStock = productStock > 10;
 
       return matchesSearch && matchesCategory && matchesStock;
     });
-  }, [products, searchTerm, filterCategory, filterStock]);
+  };
 
-  // Calculate stats from loaded products
+  const filteredProducts = useMemo(() => {
+    if (useServerPagination) return filterList(products);
+    const source = allProducts.length > 0 ? allProducts : products;
+    return filterList(source);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, allProducts, debouncedSearch, filterCategory, filterStock, useServerPagination]);
+
+  const statsSource = allProducts.length > 0 ? allProducts : products;
+
   const stockStats = useMemo(() => {
-    if (!products || !Array.isArray(products)) return { totalProducts: 0, lowStock: 0, outOfStock: 0, totalValue: 0 };
-    
-    const validProducts = products.filter(p => p && typeof p === 'object');
-    const totalProducts = validProducts.length;
-    const lowStock = validProducts.filter(p => (p.stock || 0) <= 10 && (p.stock || 0) > 0).length;
-    const outOfStock = validProducts.filter(p => (p.stock || 0) === 0).length;
-    const totalValue = validProducts.reduce((sum, p) => sum + ((p.buyPrice || 0) * (p.stock || 0)), 0);
+    if (!statsSource || !Array.isArray(statsSource)) {
+      return { totalProducts: pagination.totalProducts || 0, lowStock: 0, outOfStock: 0, totalValue: 0 };
+    }
 
-    return { totalProducts, lowStock, outOfStock, totalValue };
-  }, [products]);
+    const validProducts = statsSource.filter((p) => p && typeof p === 'object');
+    return {
+      totalProducts: allProducts.length > 0 ? validProducts.length : (pagination.totalProducts || validProducts.length),
+      lowStock: validProducts.filter((p) => (p.stock || 0) <= 10 && (p.stock || 0) > 0).length,
+      outOfStock: validProducts.filter((p) => (p.stock || 0) === 0).length,
+      totalValue: validProducts.reduce((sum, p) => sum + ((p.buyPrice || 0) * (p.stock || 0)), 0),
+    };
+  }, [statsSource, allProducts.length, pagination.totalProducts]);
 
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const totalPages = useServerPagination
+    ? (pagination.totalPages || 1)
+    : Math.ceil(filteredProducts.length / itemsPerPage) || 1;
 
-  // Category distribution chart using local products data
+  const paginatedProducts = useServerPagination
+    ? filteredProducts
+    : filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const tableLoading = useServerPagination ? loading : (allProductsLoading && allProducts.length === 0);
+
   const categoryDistributionData = useMemo(() => {
-    if (!products || !Array.isArray(products) || products.length === 0) {
+    if (!statsSource || statsSource.length === 0) {
       return { series: [], options: { chart: { type: 'donut', height: 350 }, labels: [], title: { text: 'Stock by Category' } } };
     }
 
     const breakdown = {};
-    products.forEach(p => {
+    statsSource.forEach((p) => {
       if (p && p.stock > 0) {
         const cat = p.category || 'uncategorized';
         breakdown[cat] = (breakdown[cat] || 0) + p.stock;
@@ -103,19 +131,13 @@ const InventoryManagement = () => {
     return {
       series: Object.values(breakdown),
       options: {
-        chart: {
-          type: 'donut',
-          height: 350
-        },
-        labels: Object.keys(breakdown).map(k => k.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())),
+        chart: { type: 'donut', height: 350 },
+        labels: Object.keys(breakdown).map((k) => k.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())),
         colors: ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'],
-        title: {
-          text: 'Stock by Category',
-          style: { fontSize: '16px', fontWeight: 'bold' }
-        }
-      }
+        title: { text: 'Stock by Category', style: { fontSize: '16px', fontWeight: 'bold' } },
+      },
     };
-  }, [products]);
+  }, [statsSource]);
 
   // Handle stock update — now works with colorStock array
   const handleStockUpdate = async () => {
@@ -254,7 +276,9 @@ const InventoryManagement = () => {
       {/* Charts */}
       <div className="mb-8 flex justify-center">
         <div className="bg-white rounded-lg shadow-md p-6 w-full max-w-2xl">
-          <Chart options={categoryDistributionData.options} series={categoryDistributionData.series} type="donut" height={350} />
+          <Suspense fallback={<div className="flex h-[350px] items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-600 border-t-transparent" /></div>}>
+            <Chart options={categoryDistributionData.options} series={categoryDistributionData.series} type="donut" height={350} />
+          </Suspense>
         </div>
       </div>
 
@@ -269,7 +293,7 @@ const InventoryManagement = () => {
             You have {stockStats.lowStock} products with low stock levels. Consider restocking soon.
           </p>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-            {(products && Array.isArray(products) ? products : [])
+            {(statsSource && Array.isArray(statsSource) ? statsSource : [])
               .filter(p => p && p.stock <= 10 && p.stock > 0)
               .slice(0, 6)
               .map(product => (
@@ -348,7 +372,13 @@ const InventoryManagement = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedProducts.map(product => {
+              {tableLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center">
+                    <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-purple-600 border-t-transparent" />
+                  </td>
+                </tr>
+              ) : paginatedProducts.map(product => {
                 const stockStatus = getStockStatus(product.stock || 0);
                 const totalValue = (product.buyPrice || 0) * (product.stock || 0);
 
@@ -358,7 +388,13 @@ const InventoryManagement = () => {
                       <div className="flex items-center">
                         <div className="h-10 w-10 bg-gray-200 rounded-lg flex items-center justify-center mr-3 overflow-hidden">
                           {product.defaultImage && product.defaultImage.url ? (
-                            <img src={product.defaultImage.url} alt={product.name} className="w-full h-full object-cover" />
+                            <ProductImage
+                              src={product.defaultImage.url}
+                              alt={product.name}
+                              className="w-full h-full object-cover"
+                              width={80}
+                              height={80}
+                            />
                           ) : (
                             <span className="text-xs text-gray-500">IMG</span>
                           )}
