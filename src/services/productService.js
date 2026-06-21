@@ -127,65 +127,70 @@ export const searchProductByCode = async (code) => {
   }
 };
 
-// General search products across all products
+// General search products across all products (server-side, every page)
 export const searchProducts = async (query, page = 1, category = '', season = '', admin = false) => {
   try {
-    if (query && query.trim()) {
-      // Check if query is a product code (alphanumeric with possible numbers) or general search
-      if (/^[a-zA-Z0-9\-_]+$/.test(query.trim())) {
-        // Use existing searchProductByCode for code search
-        const response = await searchProductByCode(query.trim());
-        // Format response to match expected structure
+    if (!query || !query.trim()) {
+      return await getAllProducts(page, category, season, '', admin);
+    }
+
+    const trimmed = query.trim();
+    const params = new URLSearchParams();
+    params.append('search', trimmed);
+    if (page) params.append('page', page);
+    if (category) params.append('category', category);
+    if (season) params.append('season', season);
+    if (admin) params.append('admin', 'true');
+
+    const response = await fetch(`${BASE_URL}?${params}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      mode: 'cors',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      if (errorData.message && errorData.message.includes('Product not found')) {
         return {
-          products: response.product ? [response.product] : [],
+          products: [],
+          pagination: {
+            currentPage: page,
+            totalPages: 0,
+            totalProducts: 0,
+            hasNextPage: false,
+            hasPrevPage: page > 1,
+          },
+        };
+      }
+      throw new Error(errorData.message || `HTTP ${response.status}: Failed to search products`);
+    }
+
+    const data = await response.json();
+
+    // Exact code fallback when general search returns nothing
+    if (
+      (!data.products || data.products.length === 0) &&
+      /^[a-zA-Z0-9\-_]+$/.test(trimmed)
+    ) {
+      const codeResponse = await searchProductByCode(trimmed);
+      if (codeResponse.product) {
+        return {
+          products: [codeResponse.product],
           pagination: {
             currentPage: 1,
             totalPages: 1,
+            totalProducts: 1,
             hasNextPage: false,
-            hasPrevPage: false
-          }
-        };
-      } else {
-        // Use getAllProducts with search parameter for general search
-        const params = new URLSearchParams();
-        params.append('search', query.trim());
-        if (page) params.append('page', page);
-        if (category) params.append('category', category);
-        if (season) params.append('season', season);
-        if (admin) params.append('admin', 'true');
-
-        const response = await fetch(`${BASE_URL}?${params}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
+            hasPrevPage: false,
           },
-          mode: 'cors'
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          // Don't throw error for no results, return empty array instead
-          if (errorData.message && errorData.message.includes('Product not found')) {
-            return {
-              products: [],
-              pagination: {
-                currentPage: page,
-                totalPages: 0,
-                hasNextPage: false,
-                hasPrevPage: page > 1
-              }
-            };
-          }
-          throw new Error(errorData.message || `HTTP ${response.status}: Failed to search products`);
-        }
-        
-        return await response.json();
+        };
       }
-    } else {
-      // No query, return all products
-      return await getAllProducts(page, category, season, '', admin);
     }
+
+    return data;
   } catch (error) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       throw new Error('Network error: Unable to connect to the server. Please check your internet connection.');

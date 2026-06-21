@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useProduct } from '../../../contexts/ProductContext';
 import { useOrder } from '../../../contexts/OrderContext';
 import ProductImage from '../../../components/ProductImage';
+import { useProductCatalogSearch } from '../../../hooks/useProductCatalogSearch';
 import { useDebouncedValue } from '../../../utils/useDebouncedValue';
 import { createOrder, updateOrderDetails, confirmDeposit } from '../../../services/orderService';
 import { MdAdd, MdRemove, MdDelete, MdSearch, MdShoppingCart, MdStore, MdCheckCircle, MdPrint } from 'react-icons/md';
@@ -54,25 +55,32 @@ const CreateOrder = () => {
   const [catalogPage, setCatalogPage] = useState(1);
 
   useEffect(() => {
-    if (debouncedSearch.trim()) {
-      searchAllProducts(debouncedSearch.trim(), catalogPage, '', '', true);
-    } else {
-      fetchProducts(catalogPage, '', '', true);
-    }
+    loadAllProducts(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, catalogPage]);
+  }, []);
+
+  const {
+    items: paginatedCatalog,
+    pagination: catalogPagination,
+    loading: catalogLoading,
+  } = useProductCatalogSearch({
+    allProducts,
+    products,
+    pagination,
+    loading,
+    fetchProducts,
+    searchAllProducts,
+    query: debouncedSearch,
+    page: catalogPage,
+    admin: true,
+    localPageSize: catalogPerPage,
+  });
 
   useEffect(() => {
     setCatalogPage(1);
   }, [debouncedSearch]);
 
-  const displayProducts = useMemo(() => {
-    if (!products || !Array.isArray(products)) return [];
-    return products.filter((p) => p && typeof p === 'object');
-  }, [products]);
-
-  const catalogTotalPages = pagination.totalPages || 1;
-  const paginatedCatalog = displayProducts;
+  const catalogTotalPages = catalogPagination.totalPages || 1;
 
   // Totals
   const { subtotal, totalQuantity, itemCount } = calculateOrderTotals();
@@ -195,7 +203,7 @@ const CreateOrder = () => {
 
           {/* Product Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {paginatedCatalog.map(product => (
+            {!catalogLoading && paginatedCatalog.map(product => (
               <div
                 key={product._id}
                 className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition-shadow"
@@ -268,9 +276,15 @@ const CreateOrder = () => {
               </div>
             ))}
 
-            {displayProducts.length === 0 && (
+            {catalogLoading && (
+              <div className="col-span-2 flex justify-center py-10">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-600 border-t-transparent" />
+              </div>
+            )}
+
+            {!catalogLoading && paginatedCatalog.length === 0 && (
               <div className="col-span-2 text-center py-10 text-gray-400 text-sm">
-                No products match your search.
+                {debouncedSearch.trim() ? 'No products match your search.' : 'No products on this page.'}
               </div>
             )}
           </div>
@@ -279,7 +293,7 @@ const CreateOrder = () => {
           {catalogTotalPages > 1 && (
             <div className="flex items-center justify-between mt-3">
               <p className="text-xs text-gray-500">
-                Page {catalogPage} of {catalogTotalPages} ({displayProducts.length} products)
+                Page {catalogPage} of {catalogTotalPages} ({catalogPagination.totalProducts || paginatedCatalog.length} products)
               </p>
               <div className="flex gap-1.5">
                 <button

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useProduct } from '../../../contexts/ProductContext';
 import ProductImage from '../../../components/ProductImage';
 import { useDebouncedValue } from '../../../utils/useDebouncedValue';
+import { useProductCatalogSearch } from '../../../hooks/useProductCatalogSearch';
 import {
   MdSearch,
   MdAdd,
@@ -57,21 +58,30 @@ const ProductsManagement = () => {
   const categoryParam = filterCategory === 'all' ? '' : filterCategory;
   const seasonParam = filterSeason === 'all' ? '' : filterSeason;
 
-  // Load stats in background (parallel, ~5s) — table shows after first page (~1.5s)
   useEffect(() => {
     loadAllProducts(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Server-side pagination — one API call per page
-  useEffect(() => {
-    if (debouncedSearch.trim()) {
-      searchAllProducts(debouncedSearch.trim(), currentPage, categoryParam, seasonParam, true);
-    } else {
-      fetchProducts(currentPage, categoryParam, seasonParam, true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, debouncedSearch, categoryParam, seasonParam]);
+  const {
+    items: displayProducts,
+    pagination: listPagination,
+    loading: listLoading,
+    searchingGlobally,
+  } = useProductCatalogSearch({
+    allProducts,
+    products,
+    pagination,
+    loading,
+    fetchProducts,
+    searchAllProducts,
+    query: debouncedSearch,
+    page: currentPage,
+    category: categoryParam,
+    season: seasonParam,
+    admin: true,
+    localPageSize: 12,
+  });
 
   useEffect(() => {
     setCurrentPage(1);
@@ -88,9 +98,8 @@ const ProductsManagement = () => {
   const categories = ['pajamas', 'lingerie', 'nightwear', 'robes', 'accessories'];
   const seasons = ['summer', 'winter', 'spring', 'fall', 'all'];
 
-  const totalPages = pagination.totalPages || 1;
-  const totalProducts = pagination.totalProducts || 0;
-  const displayProducts = products;
+  const totalPages = listPagination.totalPages || 1;
+  const totalProducts = listPagination.totalProducts || 0;
 
   // Inventory statistics — uses full catalog when background load finishes
   const statsSource = allProducts.length > 0 ? allProducts : products;
@@ -610,7 +619,7 @@ const ProductsManagement = () => {
       </div>
 
       {/* Product Grid */}
-      {loading ? (
+      {listLoading ? (
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin h-8 w-8 border-2 border-purple-600 border-t-transparent rounded-full"></div>
         </div>
@@ -718,7 +727,7 @@ const ProductsManagement = () => {
         </div>
       )}
 
-      {displayProducts.length === 0 && !loading && (
+      {displayProducts.length === 0 && !listLoading && (
         <div className="text-center py-12">
           <p className="text-gray-500">No products found on this page matching your criteria.</p>
         </div>

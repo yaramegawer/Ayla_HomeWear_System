@@ -355,7 +355,8 @@ const OrdersManagement = () => {
 
   // Get available colors for a product
   const getProductColors = (productId) => {
-    const product = products.find(p => p._id === productId);
+    const catalog = allProducts.length > 0 ? allProducts : products;
+    const product = catalog.find(p => p._id === productId);
     if (!product) {
       console.log('Product not found for ID:', productId);
       return [];
@@ -375,13 +376,19 @@ const OrdersManagement = () => {
       console.log('Colors from availableColors:', product.availableColors);
       return product.availableColors;
     }
+    if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
+      const colors = product.colorStock.map(cs => cs.color).filter(Boolean);
+      console.log('Colors from colorStock:', colors);
+      return colors;
+    }
     console.log('No colors found for product');
     return [];
   };
 
   // Get available sizes for a product and color
   const getProductSizes = (productId, color) => {
-    const product = products.find(p => p._id === productId);
+    const catalog = allProducts.length > 0 ? allProducts : products;
+    const product = catalog.find(p => p._id === productId);
     if (!product) {
       console.log('Product not found for ID:', productId);
       return [];
@@ -405,6 +412,10 @@ const OrdersManagement = () => {
     if (product.availableSizes && Array.isArray(product.availableSizes)) {
       console.log('Sizes from availableSizes:', product.availableSizes);
       return product.availableSizes;
+    }
+    if (Array.isArray(product.size) && product.size.length > 0) {
+      console.log('Sizes from size array:', product.size);
+      return product.size;
     }
     console.log('No sizes found for product');
     return [];
@@ -1274,7 +1285,7 @@ const OrdersManagement = () => {
                 {/* Product List */}
                 <div className="mt-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
                   {(() => {
-                    const filteredProducts = (products || []).filter(p => {
+                    const filteredProducts = (allProducts || []).filter(p => {
                       const search = exchangeProductSearch.toLowerCase();
                       return (p.code || '').toLowerCase().includes(search) || 
                              (p.name || '').toLowerCase().includes(search);

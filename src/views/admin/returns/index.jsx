@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useOrder } from '../../../contexts/OrderContext';
 import { useProduct } from '../../../contexts/ProductContext';
 import { returnOrder, exchangeOrderProducts } from '../../../services/orderService';
+import { searchProducts } from '../../../services/productService';
+import { useDebouncedValue } from '../../../utils/useDebouncedValue';
+import { filterProducts } from '../../../utils/productSearch';
 import {
   MdSearch, MdRefresh, MdSwapHoriz, MdClose, MdAdd, MdRemove, MdStore, MdCheckCircle
 } from 'react-icons/md';
@@ -31,7 +34,6 @@ const StatusBadge = ({ status }) => {
 const ReturnsManagement = () => {
   const { orders, loading, fetchOrders } = useOrder();
   const { products, allProducts, loadAllProducts } = useProduct();
-  const catalog = allProducts.length > 0 ? allProducts : products;
 
   React.useEffect(() => {
     loadAllProducts(true);
@@ -68,6 +70,45 @@ const ReturnsManagement = () => {
   const [exchangeLoading, setExchangeLoading] = useState(false);
   const [exchangeError, setExchangeError]   = useState('');
   const [productSearch, setProductSearch]   = useState('');
+  const debouncedProductSearch = useDebouncedValue(productSearch);
+  const [exchangeSearchResults, setExchangeSearchResults] = useState([]);
+  const [exchangeSearchLoading, setExchangeSearchLoading] = useState(false);
+
+  // Global product search for exchange picker (all pages, not just current)
+  useEffect(() => {
+    const query = debouncedProductSearch.trim();
+    if (!query) {
+      setExchangeSearchResults([]);
+      return;
+    }
+
+    if (allProducts.length > 0) {
+      setExchangeSearchResults(filterProducts(allProducts, { query }).slice(0, 50));
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setExchangeSearchLoading(true);
+      try {
+        const response = await searchProducts(query, 1, '', '', true);
+        if (!cancelled) {
+          setExchangeSearchResults(response.products || []);
+        }
+      } catch {
+        if (!cancelled) setExchangeSearchResults([]);
+      } finally {
+        if (!cancelled) setExchangeSearchLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [debouncedProductSearch, allProducts]);
+
+  const filteredProducts = useMemo(() => {
+    if (!debouncedProductSearch.trim()) return [];
+    return exchangeSearchResults;
+  }, [debouncedProductSearch, exchangeSearchResults]);
   const [selectedColors, setSelectedColors] = useState({}); // { [originalItemId]: color }
   const [selectedSizes, setSelectedSizes]   = useState({}); // { [originalItemId]: size }
 
@@ -115,15 +156,7 @@ const ReturnsManagement = () => {
   const paginatedExchanges = filteredExchanges.slice((exchangePage - 1) * PAGE_SIZE, exchangePage * PAGE_SIZE);
   const exchangeTotalPages = Math.ceil(filteredExchanges.length / PAGE_SIZE) || 1;
 
-  // Filtered products for exchange picker
-  const filteredProducts = useMemo(() => {
-    if (!Array.isArray(catalog)) return [];
-    const q = productSearch.toLowerCase();
-    return catalog.filter(p =>
-      (p.name || '').toLowerCase().includes(q) ||
-      (p.code || '').toLowerCase().includes(q)
-    );
-  }, [catalog, productSearch]);
+  // Filtered products for exchange picker — handled above via debouncedProductSearch
 
   // ── Open modals ─────────────────────────────────────────────────────────────
   const openReturn = (order) => {
@@ -160,23 +193,43 @@ const ReturnsManagement = () => {
     }
   };
 
+  const findProduct = (productId) => {
+    if (!productId) return null;
+    const id = productId.toString();
+    const pools = [exchangeSearchResults, allProducts, products];
+    for (const pool of pools) {
+      if (!Array.isArray(pool)) continue;
+      const found = pool.find((p) => p._id?.toString() === id || p.id?.toString() === id);
+      if (found) return found;
+    }
+    return null;
+  };
+
   const getProductCode = (productId) => {
-    const product = (catalog || []).find(p => p._id === productId || p.id === productId);
+    const product = findProduct(productId);
     return product ? product.code : 'No Code';
   };
 
   // Get available colors for a product
   const getProductColors = (productId) => {
-    const product = (catalog || []).find(p => p._id === productId || p.id === productId);
-    if (!product || !product.variants) return [];
-    return [...new Set(product.variants.map(v => v.color))];
+    const product = findProduct(productId);
+    if (!product) return [];
+    if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
+      return product.colorStock.map((cs) => cs.color).filter(Boolean);
+    }
+    if (!product.variants) return [];
+    return [...new Set(product.variants.map((v) => v.color))];
   };
 
   // Get available sizes for a product and color
   const getProductSizes = (productId, color) => {
-    const product = (catalog || []).find(p => p._id === productId || p.id === productId);
-    if (!product || !product.variants || !color) return [];
-    return [...new Set(product.variants.filter(v => v.color === color).map(v => v.size))];
+    const product = findProduct(productId);
+    if (!product) return [];
+    if (Array.isArray(product.size) && product.size.length > 0) {
+      return product.size;
+    }
+    if (!product.variants || !color) return [];
+    return [...new Set(product.variants.filter((v) => v.color === color).map((v) => v.size))];
   };
 
   // ── Submit exchange ──────────────────────────────────────────────────────────
@@ -221,7 +274,7 @@ const ReturnsManagement = () => {
     let newTotal = 0;
     Object.entries(exchangeMap).forEach(([origId, replacement]) => {
       const orig = (exchangeOrder?.products || []).find(p => p._id === origId);
-      const rep = catalog?.find(p => p._id === replacement.productId);
+      const rep = findProduct(replacement.productId);
       if (orig && rep) {
         originalTotal += (orig.finalPrice || orig.price || 0) * orig.quantity;
         newTotal += (rep.price || 0) * orig.quantity;
@@ -374,8 +427,8 @@ const ReturnsManagement = () => {
                       <td className="px-4 py-3 min-w-[260px]">
                         <div className="space-y-1.5 shadow-sm max-h-32 overflow-y-auto pr-1 custom-scrollbar">
                           {(order.exchangedProducts || []).map((exc, i) => {
-                            const origProd = catalog?.find(p => p._id === exc.originalProductId);
-                            const newProd = catalog?.find(p => p._id === exc.newProductId);
+                            const origProd = findProduct(exc.originalProductId);
+                            const newProd = findProduct(exc.newProductId);
                             const adj = exc.priceAdjustment || 0;
                             return (
                               <div key={i} className={`text-[11px] border p-1.5 rounded-md flex flex-col gap-1 ${adj > 0 ? 'bg-orange-50/50 border-orange-100' : adj < 0 ? 'bg-green-50/50 border-green-100' : 'bg-gray-50 border-gray-100'}`}>
@@ -548,7 +601,7 @@ const ReturnsManagement = () => {
                   <div className="space-y-3">
                     {(exchangeOrder.products || []).map((item, i) => {
                       const replacement = exchangeMap[item._id];
-                      const replacedProduct = replacement ? catalog.find(p => p._id === replacement.productId) : null;
+                      const replacedProduct = replacement ? findProduct(replacement.productId) : null;
                       const isSelecting = selectingReplacementFor === item._id;
 
                       return (
@@ -613,7 +666,10 @@ const ReturnsManagement = () => {
                                 />
                               </div>
                               <div className="max-h-48 overflow-y-auto space-y-1">
-                                {filteredProducts.map(p => (
+                                {exchangeSearchLoading && (
+                                  <p className="text-xs text-gray-400 text-center py-4">Searching all products…</p>
+                                )}
+                                {!exchangeSearchLoading && filteredProducts.map(p => (
                                   <button
                                     key={p._id}
                                     type="button"
@@ -631,7 +687,12 @@ const ReturnsManagement = () => {
                                     <span className="text-gray-500 font-medium shrink-0">{formatCurrency(p.price)}</span>
                                   </button>
                                 ))}
-                                {filteredProducts.length === 0 && <p className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded">No products found for "{productSearch}".</p>}
+                                {!exchangeSearchLoading && filteredProducts.length === 0 && debouncedProductSearch.trim() && (
+                                  <p className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded">No products found for "{productSearch}".</p>
+                                )}
+                                {!debouncedProductSearch.trim() && (
+                                  <p className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded">Type a product name or code to search the full catalog.</p>
+                                )}
                               </div>
 
                               {/* Color and Size Selection */}
