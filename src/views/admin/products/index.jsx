@@ -96,7 +96,16 @@ const ProductsManagement = () => {
   const [colorInput, setColorInput] = useState('');
   const [sizeInput, setSizeInput] = useState('');
 
-  const categories = ['pajamas', 'lingerie', 'nightwear', 'robes', 'accessories'];
+  const categories = [
+  'كاشات',
+  'بيجامات',
+  'شورتات',
+  'بيج سايز',
+  'فساتين',
+  'قطن 100%',
+  'لانجيري',
+  'لانجيري مستورد'
+];
   const seasons = ['summer', 'winter', 'spring', 'fall', 'all'];
 
   const totalPages = listPagination.totalPages || 1;
