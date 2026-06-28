@@ -104,7 +104,9 @@ const ProductsManagement = () => {
   'فساتين',
   'قطن 100%',
   'لانجيري',
-  'لانجيري مستورد'
+  'لانجيري مستورد',
+  "ترنجات",
+  "بيجامات 3 قطع"
 ];
   const seasons = ['summer', 'winter', 'spring', 'fall', 'all'];
 
