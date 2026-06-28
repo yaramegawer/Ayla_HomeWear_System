@@ -37,6 +37,7 @@ const ProductsManagement = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     code: '',
     name: '',
@@ -204,6 +205,7 @@ const ProductsManagement = () => {
     });
 
     try {
+      setIsSubmitting(true);
       // Validate required fields
       const errors = {};
       if (!formData.code.trim()) errors.code = 'Product code is required';
@@ -221,6 +223,7 @@ const ProductsManagement = () => {
 
       if (Object.keys(errors).length > 0) {
         setFormErrors(errors);
+        setIsSubmitting(false);
         return;
       }
       setFormErrors({});
@@ -349,6 +352,8 @@ const ProductsManagement = () => {
       }
 
       resetForm();
+      setIsSubmitting(false);
+      setTimeout(() => setSuccessMessage(''), 5000);
     } catch (error) {
       console.error('Error saving product:', error);
 
@@ -363,6 +368,7 @@ const ProductsManagement = () => {
 
       // Clear global error so it only shows up inside the form
       clearError();
+      setIsSubmitting(false);
     }
   };
 
@@ -1060,20 +1066,20 @@ const ProductsManagement = () => {
               <div className="flex space-x-4 mt-6">
                 <button
                   type="submit"
-                  disabled={loading}
-                  className={`flex-1 ${loading ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'} text-white px-4 py-2 rounded-lg transition-colors font-medium`}
+                  disabled={isSubmitting}
+                  className={`flex-1 ${isSubmitting ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'} text-white px-4 py-2 rounded-lg transition-colors font-medium`}
                 >
-                  {loading ? 'Saving...' : (editingProduct ? 'Update Product' : 'Add Product')}
+                  {isSubmitting ? 'Saving...' : (editingProduct ? 'Update Product' : 'Add Product')}
                 </button>
                 <button
                   type="button"
-                  disabled={loading}
+                  disabled={isSubmitting}
                   onClick={() => {
                     setShowForm(false);
                     setEditingProduct(null);
                     resetForm();
                   }}
-                  className={`flex-1 ${loading ? 'bg-gray-200 cursor-not-allowed text-gray-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'} px-4 py-2 rounded-lg transition-colors font-medium`}
+                  className={`flex-1 ${isSubmitting ? 'bg-gray-200 cursor-not-allowed text-gray-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'} px-4 py-2 rounded-lg transition-colors font-medium`}
                 >
                   Cancel
                 </button>

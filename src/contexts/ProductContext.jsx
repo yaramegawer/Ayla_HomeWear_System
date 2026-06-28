@@ -123,7 +123,7 @@ export const ProductProvider = ({ children }) => {
     }
   };
 
-  const searchAllProducts = async (query, page = 1, category = '', season = '', admin = false) => {
+  const searchAllProducts = useCallback(async (query, page = 1, category = '', season = '', admin = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -143,14 +143,14 @@ export const ProductProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const invalidateAllProducts = () => {
+  const invalidateAllProducts = useCallback(() => {
     setAllProducts([]);
     allFetchRef.current = null;
-  };
+  }, []);
 
-  const addProduct = async (formData) => {
+  const addProduct = useCallback(async (formData) => {
     setLoading(true);
     setError(null);
     try {
@@ -166,9 +166,9 @@ export const ProductProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const editProduct = async (id, productData) => {
+  const editProduct = useCallback(async (id, productData) => {
     setLoading(true);
     setError(null);
     try {
@@ -185,9 +185,9 @@ export const ProductProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const updateProductImagesOnly = async (id, formData) => {
+  const updateProductImagesOnly = useCallback(async (id, formData) => {
     setLoading(true);
     setError(null);
     try {
@@ -204,9 +204,9 @@ export const ProductProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const removeProduct = async (id) => {
+  const removeProduct = useCallback(async (id) => {
     setLoading(true);
     setError(null);
     try {
@@ -220,7 +220,7 @@ export const ProductProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const clearError = () => setError(null);
 
