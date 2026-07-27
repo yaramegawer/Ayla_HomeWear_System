@@ -20,12 +20,12 @@ export const getAllProducts = async (page = 1, category = '', season = '', limit
       },
       mode: 'cors'
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch products`);
     }
-    
+
     const data = await response.json();
     return data;
   } catch (error) {
@@ -60,11 +60,20 @@ export const fetchAllProductsParallel = async (category = '', season = '', admin
     });
   }
 
+  // Deduplicate by _id — parallel page fetches with concurrent inserts
+  // can cause the same product to appear on adjacent pages
+  const seen = new Set();
+  const deduped = allProducts.filter((p) => {
+    if (!p?._id || seen.has(p._id)) return false;
+    seen.add(p._id);
+    return true;
+  });
+
   return {
-    products: allProducts,
+    products: deduped,
     pagination: {
       ...(first.pagination || {}),
-      totalProducts: allProducts.length,
+      totalProducts: deduped.length,
     },
   };
 };
@@ -80,12 +89,12 @@ export const getProductById = async (id) => {
       },
       mode: 'cors'
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.message || `HTTP ${response.status}: Product not found`);
     }
-    
+
     const data = await response.json();
     return data;
   } catch (error) {
@@ -107,7 +116,7 @@ export const searchProductByCode = async (code) => {
       },
       mode: 'cors'
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       // Don't throw error for "Product not found" - return empty result instead
@@ -116,7 +125,7 @@ export const searchProductByCode = async (code) => {
       }
       throw new Error(errorData.message || `HTTP ${response.status}: Product search failed`);
     }
-    
+
     const data = await response.json();
     return data;
   } catch (error) {
@@ -203,7 +212,7 @@ export const searchProducts = async (query, page = 1, category = '', season = ''
 export const createProduct = async (formData) => {
   try {
     const token = localStorage.getItem('token');
-    
+
     const response = await fetch(`${BASE_URL}`, {
       method: 'POST',
       headers: {
@@ -211,14 +220,14 @@ export const createProduct = async (formData) => {
       },
       body: formData
     });
-    
+
     const data = await response.json();
-    
+
     if (!response.ok) {
       console.error('Backend error response:', data);
       throw new Error(data.message || `Failed to create product: ${JSON.stringify(data)}`);
     }
-    
+
     return data;
   } catch (error) {
     throw error;
@@ -229,10 +238,10 @@ export const createProduct = async (formData) => {
 export const updateProduct = async (id, productData) => {
   try {
     const token = localStorage.getItem('token');
-    
+
     // Check if productData is FormData (contains images) or regular JSON
     const isFormData = productData instanceof FormData;
-    
+
     const response = await fetch(`${BASE_URL}/${id}`, {
       method: 'PUT',
       headers: {
@@ -242,13 +251,13 @@ export const updateProduct = async (id, productData) => {
       },
       body: isFormData ? productData : JSON.stringify(productData)
     });
-    
+
     const data = await response.json();
-    
+
     if (!response.ok) {
       throw new Error(data.message || 'Failed to update product');
     }
-    
+
     return data;
   } catch (error) {
     throw error;
@@ -259,7 +268,7 @@ export const updateProduct = async (id, productData) => {
 export const updateProductImages = async (id, formData) => {
   try {
     const token = localStorage.getItem('token');
-    
+
     const response = await fetch(`${BASE_URL}/${id}/images`, {
       method: 'PUT',
       headers: {
@@ -268,13 +277,13 @@ export const updateProductImages = async (id, formData) => {
       },
       body: formData
     });
-    
+
     const data = await response.json();
-    
+
     if (!response.ok) {
       throw new Error(data.message || 'Failed to update product images');
     }
-    
+
     return data;
   } catch (error) {
     throw error;
@@ -285,20 +294,20 @@ export const updateProductImages = async (id, formData) => {
 export const deleteProduct = async (id) => {
   try {
     const token = localStorage.getItem('token');
-    
+
     const response = await fetch(`${BASE_URL}/${id}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${token}`,
       }
     });
-    
+
     const data = await response.json();
-    
+
     if (!response.ok) {
       throw new Error(data.message || 'Failed to delete product');
     }
-    
+
     return data;
   } catch (error) {
     throw error;

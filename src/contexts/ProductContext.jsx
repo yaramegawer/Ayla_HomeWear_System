@@ -31,7 +31,9 @@ export const ProductProvider = ({ children }) => {
   const allFetchRef = useRef(null);
 
   /** Fetch a single API page — ~1.5s for 20 products (fast initial render). */
-  const fetchProducts = useCallback(async (page = 1, category = '', season = '', admin = false) => {
+  const fetchProducts = useCallback(async (page = 1, category = '', season = '', admin = true) => {
+
+    
     const key = `${page}-${category}-${season}-${admin}`;
     if (pageFetchRef.current?.key === key) {
       return pageFetchRef.current.promise;
@@ -157,7 +159,11 @@ export const ProductProvider = ({ children }) => {
       const response = await createProduct(formData);
       if (response?.product) {
         setProducts((prev) => [response.product, ...prev]);
-        setAllProducts((prev) => [response.product, ...prev]);
+        setAllProducts((prev) => {
+          // Prevent duplicate if the product was already fetched by parallel loader
+          if (prev.some((p) => p._id === response.product._id)) return prev;
+          return [response.product, ...prev];
+        });
       }
       return response;
     } catch (err) {
