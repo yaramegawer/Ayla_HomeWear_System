@@ -97,17 +97,18 @@ const ProductsManagement = () => {
   const [sizeInput, setSizeInput] = useState('');
 
   const categories = [
-  'كاشات',
-  'بيجامات',
-  'شورتات',
-  'بيج سايز',
-  'فساتين',
-  'قطن 100%',
-  'لانجيري',
-  'لانجيري مستورد',
-  "ترنجات",
-  "بيجامات 3 قطع"
-];
+    'كاشات',
+    'بيجامات',
+    'شورتات',
+    'بيج سايز',
+    'فساتين',
+    'قطن 100%',
+    'لانجيري',
+    'لانجيري مستورد',
+    "ترنجات",
+    "بيجامات 3 قطع",
+    "pajamas"
+  ];
   const seasons = ['summer', 'winter', 'spring', 'fall', 'all'];
 
   const totalPages = listPagination.totalPages || 1;
@@ -134,7 +135,7 @@ const ProductsManagement = () => {
     statsSource.forEach(product => {
       // Calculate total stock for this product
       let productStock = 0;
-      
+
       if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
         // New schema: sum stock from colorStock
         productStock = product.colorStock.reduce((sum, cs) => sum + (parseInt(cs.stock) || 0), 0);
@@ -245,7 +246,7 @@ const ProductsManagement = () => {
           subImages: formData.subImages,
           subImagesLength: formData.subImages ? formData.subImages.length : 0
         });
-        
+
         // First, update text fields
         const productData = {
           name: formData.name,
@@ -261,14 +262,14 @@ const ProductsManagement = () => {
         };
 
         await editProduct(editingProduct._id, productData);
-        
+
         // Then, update images if new ones were selected
         if (formData.defaultImage || (formData.subImages && formData.subImages.length > 0)) {
           console.log('Updating product images...');
-          
+
           // Create FormData for image upload
           const imageFormData = new FormData();
-          
+
           // Compress and add new images
           const compressionTasks = [];
           if (formData.defaultImage) {
@@ -281,7 +282,7 @@ const ProductsManagement = () => {
           if (compressionTasks.length > 0) {
             console.log('Compressing new images for update...');
             const compressedResults = await Promise.all(compressionTasks);
-            
+
             compressedResults.forEach(({ type, file }) => {
               if (type === 'default') {
                 imageFormData.append('defaultImage', file);
@@ -410,7 +411,7 @@ const ProductsManagement = () => {
   // Edit product
   const handleEdit = (product) => {
     setEditingProduct(product);
-    
+
     let existingColorStock = [];
     if (Array.isArray(product.colorStock) && product.colorStock.length > 0) {
       // Use new schema if present
@@ -419,7 +420,7 @@ const ProductsManagement = () => {
       // Migrate old data: preserve the old stock value
       const totalStock = product.stock || 0;
       const oldColors = Array.isArray(product.color) && product.color.length > 0 ? product.color : (totalStock > 0 ? ['default'] : []);
-      
+
       if (oldColors.length > 0) {
         const perColor = Math.floor(totalStock / oldColors.length);
         const remainder = totalStock % oldColors.length;
@@ -578,7 +579,7 @@ const ProductsManagement = () => {
         </div>
       </div>
 
-      
+
       {/* Category Breakdown */}
       {Object.keys(inventoryStats.categories).length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-4 mb-6">
@@ -926,10 +927,10 @@ const ProductsManagement = () => {
                     type="file"
                     accept="image/*"
                     onChange={(e) => {
-                    const file = e.target.files[0];
-                    console.log('Default image selected:', file);
-                    setFormData({ ...formData, defaultImage: file });
-                  }}
+                      const file = e.target.files[0];
+                      console.log('Default image selected:', file);
+                      setFormData({ ...formData, defaultImage: file });
+                    }}
                     className={`w-full px-3 py-2 border ${formErrors.defaultImage ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                   />
                   {formData.defaultImage && (
@@ -950,10 +951,10 @@ const ProductsManagement = () => {
                     accept="image/*"
                     multiple
                     onChange={(e) => {
-                    const files = e.target.files;
-                    console.log('Sub images selected:', files, 'Length:', files.length);
-                    setFormData({ ...formData, subImages: files });
-                  }}
+                      const files = e.target.files;
+                      console.log('Sub images selected:', files, 'Length:', files.length);
+                      setFormData({ ...formData, subImages: files });
+                    }}
                     className={`w-full px-3 py-2 border ${formErrors.subImages ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500`}
                   />
                   {formData.subImages && formData.subImages.length > 0 && (
@@ -1016,34 +1017,34 @@ const ProductsManagement = () => {
                   />
                   {formErrors.colorStock && <p className="text-red-500 text-xs mt-1">{formErrors.colorStock}</p>}
 
-                {/* Per-color stock inputs - Styled like Sizes tags */}
-                {formData.colorStock.length > 0 && (
-                  <div className="mt-2">
-                    <div className="flex flex-wrap gap-2">
-                      {formData.colorStock.map((cs, idx) => (
-                        <div key={idx} className="flex items-center text-sm bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full font-medium border border-purple-100">
-                          <span className="capitalize mr-2">{cs.color}:</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={cs.stock}
-                            onChange={(e) => {
-                              const validStock = Math.max(0, parseInt(e.target.value) || 0);
-                              const updated = [...formData.colorStock];
-                              updated[idx] = { ...updated[idx], stock: validStock };
-                              setFormData({ ...formData, colorStock: updated });
-                            }}
-                            className="w-12 bg-transparent text-purple-900 border-b border-purple-300 focus:outline-none focus:border-purple-600 text-center"
-                          />
-                        </div>
-                      ))}
+                  {/* Per-color stock inputs - Styled like Sizes tags */}
+                  {formData.colorStock.length > 0 && (
+                    <div className="mt-2">
+                      <div className="flex flex-wrap gap-2">
+                        {formData.colorStock.map((cs, idx) => (
+                          <div key={idx} className="flex items-center text-sm bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full font-medium border border-purple-100">
+                            <span className="capitalize mr-2">{cs.color}:</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={cs.stock}
+                              onChange={(e) => {
+                                const validStock = Math.max(0, parseInt(e.target.value) || 0);
+                                const updated = [...formData.colorStock];
+                                updated[idx] = { ...updated[idx], stock: validStock };
+                                setFormData({ ...formData, colorStock: updated });
+                              }}
+                              className="w-12 bg-transparent text-purple-900 border-b border-purple-300 focus:outline-none focus:border-purple-600 text-center"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {/* Total Stock Indicator */}
+                      <div className="mt-2 text-xs text-gray-500 font-medium">
+                        Total Units: <span className="text-purple-700 font-bold">{formData.colorStock.reduce((s, cs) => s + (parseInt(cs.stock) || 0), 0)}</span>
+                      </div>
                     </div>
-                    {/* Total Stock Indicator */}
-                    <div className="mt-2 text-xs text-gray-500 font-medium">
-                      Total Units: <span className="text-purple-700 font-bold">{formData.colorStock.reduce((s, cs) => s + (parseInt(cs.stock) || 0), 0)}</span>
-                    </div>
-                  </div>
-                )}
+                  )}
                 </div>
 
                 {/* Sizes */}
