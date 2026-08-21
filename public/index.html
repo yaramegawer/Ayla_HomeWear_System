@@ -30,18 +30,54 @@
   <meta name="theme-color" content="#000000" />
   <meta name="description" content="Ayla HomeWear Admin Dashboard" />
   <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+  <!-- Preconnect to Google Fonts (keeps DNS/TLS warm) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Preload fonts as non-render-blocking: the onload swaps rel to stylesheet -->
   <link
+    rel="preload"
+    as="style"
     href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Poppins:wght@400;600;700&display=swap"
-    rel="stylesheet"
+    onload="this.onload=null;this.rel='stylesheet'"
   />
+  <!-- Fallback for browsers with JS disabled -->
+  <noscript>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Poppins:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </noscript>
+
   <title>Ayla HomeWear</title>
+
+  <!-- Inline critical CSS: ensures body + LCP text render instantly with system font fallback -->
+  <style>
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      margin: 0;
+      background: #F4F7FE;
+    }
+    /* Prevent layout shift: reserve space for the root immediately */
+    #root { min-height: 100vh; }
+    /* Skeleton pulse shown only until React hydrates */
+    .initial-loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #a0aec0;
+      font-size: 14px;
+    }
+  </style>
 </head>
 
-<body class="font-dm bg-lightPrimary">
+<body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
-  <div id="root"></div>
+  <div id="root"><div class="initial-loader">Loading…</div></div>
 </body>
 
 </html>

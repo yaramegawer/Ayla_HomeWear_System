@@ -32,6 +32,11 @@ const FinanceAnalytics = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  const [activeTab, setActiveTab] = useState('purchases');
+  const [purchasesPage, setPurchasesPage] = useState(1);
+  const [expensesPage, setExpensesPage] = useState(1);
+  const itemsPerPage = 10;
+
   const [isCapitalModalOpen, setIsCapitalModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
   const [capitalForm, setCapitalForm] = useState({ capitalMoney: 0 });
@@ -70,13 +75,16 @@ const FinanceAnalytics = () => {
 
   const fetchData = useCallback(() => {
     const { startIso, endIso } = getDateRangeIso();
-    const dateParams = startDate || endDate ? { startDate: startIso, endDate: endIso } : {};
+    const dateParams = {
+      limit: 10000,
+      ...(startDate || endDate ? { startDate: startIso, endDate: endIso } : {})
+    };
 
     setLoading(true);
     Promise.all([
       getFinanceOverview(startIso, endIso),
       getAllExpenses(dateParams),
-      getInventoryPurchases(startIso, endIso),
+      getInventoryPurchases(startIso, endIso, purchasesPage),
     ])
       .then(([overviewRes, expensesRes, inventoryRes]) => {
         if (overviewRes.success) {
@@ -96,11 +104,11 @@ const FinanceAnalytics = () => {
       })
       .catch((err) => console.error('Failed to load finance data:', err))
       .finally(() => setLoading(false));
-  }, [getDateRangeIso, startDate, endDate]);
+  }, [getDateRangeIso, startDate, endDate, purchasesPage]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, startDate, endDate, purchasesPage]);
 
   const handleEditExpense = (expense) => {
     setEditingExpense(expense);
@@ -356,6 +364,12 @@ const FinanceAnalytics = () => {
     return `Counted on ${new Date(date).toLocaleString()}`;
   };
 
+  const totalPurchasesPages = Math.ceil(inventorySummary.count / 50) || 1;
+
+  const startIndexExpenses = (expensesPage - 1) * itemsPerPage;
+  const paginatedExpenses = expenses.slice(startIndexExpenses, startIndexExpenses + itemsPerPage);
+  const totalExpensesPages = Math.ceil(expenses.length / itemsPerPage) || 1;
+
   return (
     <div className="p-6">
       <div className="mb-6 flex justify-between items-center flex-wrap gap-y-3">
@@ -370,7 +384,7 @@ const FinanceAnalytics = () => {
               type="date"
               className="py-1 text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); setPurchasesPage(1); setExpensesPage(1); }}
             />
             <span className="text-gray-300">|</span>
             <span className="text-gray-500 text-sm font-medium">To</span>
@@ -378,11 +392,11 @@ const FinanceAnalytics = () => {
               type="date"
               className="py-1 text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => { setEndDate(e.target.value); setPurchasesPage(1); setExpensesPage(1); }}
             />
             {(startDate || endDate) && (
               <button
-                onClick={() => { setStartDate(''); setEndDate(''); }}
+                onClick={() => { setStartDate(''); setEndDate(''); setPurchasesPage(1); setExpensesPage(1); }}
                 className="ml-1 text-gray-400 hover:text-red-500 p-1 rounded"
                 title="Clear dates"
               >
@@ -491,9 +505,8 @@ const FinanceAnalytics = () => {
 
           {/* Net Sales */}
           <div className="mb-8">
-            <div className={`rounded-2xl shadow-lg p-6 border-2 ${
-              netSales >= 0 ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200' : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
-            }`}>
+            <div className={`rounded-2xl shadow-lg p-6 border-2 ${netSales >= 0 ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200' : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
+              }`}>
               <p className="text-sm font-medium text-gray-500 mb-1">Net Sales</p>
               <p className={`text-4xl font-extrabold ${netSales >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
                 {formatCurrency(netSales)}
@@ -520,9 +533,8 @@ const FinanceAnalytics = () => {
                 <p className="text-sm text-gray-500 mb-1">Total Expenses</p>
                 <p className="text-3xl font-bold text-orange-600">{formatCurrency(totalExpenses)}</p>
               </div>
-              <div className={`rounded-2xl shadow-lg p-6 border-2 md:col-span-2 ${
-                finalProfit >= 0 ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200' : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
-              }`}>
+              <div className={`rounded-2xl shadow-lg p-6 border-2 md:col-span-2 ${finalProfit >= 0 ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200' : 'bg-gradient-to-br from-red-50 to-orange-50 border-red-200'
+                }`}>
                 <p className="text-sm text-gray-500 mb-1">Net Profit</p>
                 <p className={`text-4xl font-extrabold ${finalProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                   {formatCurrency(finalProfit)}
@@ -539,101 +551,194 @@ const FinanceAnalytics = () => {
             </div>
           </div>
 
-          {/* Inventory purchases */}
-          <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Inventory Purchases</h3>
-                <p className="text-sm text-gray-500">
-                  Total in period: {formatCurrency(inventorySummary.totalAmount)} ({inventorySummary.count} entries)
-                </p>
-              </div>
+          {/* Tabs Container */}
+          <div className="bg-white rounded-2xl shadow-md p-6 mb-8 border border-gray-100">
+            <div className="flex border-b border-gray-100 pb-4 mb-6">
               <button
-                onClick={() => { resetInventoryForm(); setIsInventoryModalOpen(true); }}
-                className="text-sm bg-amber-600 text-white px-3 py-2 rounded-lg hover:bg-amber-700 flex items-center"
+                onClick={() => setActiveTab('purchases')}
+                className={`flex items-center space-x-2 pb-3 px-4 text-sm font-semibold border-b-2 transition-all duration-200 ${
+                  activeTab === 'purchases'
+                    ? 'border-amber-500 text-amber-600'
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
               >
-                <MdAdd className="mr-1" /> Add purchase
+                <span>Purchases</span>
+                <span className={`px-2 py-0.5 text-xs rounded-full ${activeTab === 'purchases' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'}`}>
+                  {inventorySummary.count}
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab('expenses')}
+                className={`flex items-center space-x-2 pb-3 px-4 text-sm font-semibold border-b-2 transition-all duration-200 ${
+                  activeTab === 'expenses'
+                    ? 'border-purple-500 text-purple-600'
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                <span>Expenses</span>
+                <span className={`px-2 py-0.5 text-xs rounded-full ${activeTab === 'expenses' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-500'}`}>
+                  {expenses.length}
+                </span>
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {inventoryPurchases.length > 0 ? (
-                    inventoryPurchases.map((item) => (
-                      <tr key={item._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {new Date(item.date).toLocaleDateString()}
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium">{item.description}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{item.supplier || '—'}</td>
-                        <td className="px-4 py-3 text-sm capitalize">{(item.paymentMethod || '').replace('_', ' ')}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-amber-700">{formatCurrency(item.amount)}</td>
-                        <td className="px-4 py-3 text-sm">
-                          <button onClick={() => handleEditInventory(item)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
-                          <button onClick={() => handleDeleteInventory(item)} className="text-red-600 hover:text-red-800">Delete</button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="px-4 py-6 text-center text-sm text-gray-500">
-                        No inventory purchases in this period.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
 
-          {/* Expenses */}
-          <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Detailed Expenses</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {expenses.length > 0 ? (
-                    expenses.map((expense) => (
-                      <tr key={expense._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm text-gray-500">{new Date(expense.date).toLocaleDateString()}</td>
-                        <td className="px-6 py-4 text-sm font-medium">{expense.description}</td>
-                        <td className="px-6 py-4 text-sm capitalize">{(expense.category || '').replace('_', ' ')}</td>
-                        <td className="px-6 py-4 text-sm capitalize">{(expense.paymentMethod || '').replace('_', ' ')}</td>
-                        <td className="px-6 py-4 text-sm font-medium text-red-600">{formatCurrency(expense.amount)}</td>
-                        <td className="px-6 py-4 text-sm">
-                          <button onClick={() => handleEditExpense(expense)} className="text-blue-600 mr-3">Edit</button>
-                          <button onClick={() => handleDeleteExpense(expense)} className="text-red-600">Delete</button>
-                        </td>
+            {/* Purchases Tab */}
+            {activeTab === 'purchases' && (
+              <div>
+                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Inventory Purchases</h3>
+                    <p className="text-xs text-gray-400">Total amount in period: <span className="font-semibold text-amber-700">{formatCurrency(inventorySummary.totalAmount)}</span></p>
+                  </div>
+                  <button
+                    onClick={() => { resetInventoryForm(); setIsInventoryModalOpen(true); }}
+                    className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 flex items-center font-medium shadow-sm transition-all"
+                  >
+                    <MdAdd className="mr-1 h-4 w-4" /> Add Purchase
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3">Description</th>
+                        <th className="px-4 py-3">Supplier</th>
+                        <th className="px-4 py-3">Payment</th>
+                        <th className="px-4 py-3">Amount</th>
+                        <th className="px-4 py-3">Actions</th>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="px-6 py-4 text-center text-sm text-gray-500">No expenses found.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm text-gray-600">
+                      {inventoryPurchases.length > 0 ? (
+                        inventoryPurchases.map((item) => (
+                          <tr key={item._id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-4 py-3 text-xs text-gray-400">{new Date(item.date).toLocaleDateString()}</td>
+                            <td className="px-4 py-3 font-medium text-gray-800">{item.description}</td>
+                            <td className="px-4 py-3 text-gray-500">{item.supplier || '—'}</td>
+                            <td className="px-4 py-3 capitalize">{(item.paymentMethod || '').replace('_', ' ')}</td>
+                            <td className="px-4 py-3 font-semibold text-amber-700">{formatCurrency(item.amount)}</td>
+                            <td className="px-4 py-3 text-xs space-x-2">
+                              <button onClick={() => handleEditInventory(item)} className="text-blue-600 hover:text-blue-800 mr-2">Edit</button>
+                              <button onClick={() => handleDeleteInventory(item)} className="text-red-600 hover:text-red-800">Delete</button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="px-4 py-6 text-center text-gray-400">No inventory purchases found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Purchases pagination controls */}
+                {inventorySummary.count > 50 && (
+                  <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
+                    <div>
+                      Showing page <span className="font-semibold">{purchasesPage}</span> of <span className="font-semibold">{totalPurchasesPages}</span> ({inventorySummary.count} entries)
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => setPurchasesPage(prev => Math.max(prev - 1, 1))}
+                        disabled={purchasesPage === 1}
+                        className={`px-3 py-1.5 border rounded-lg transition-all ${purchasesPage === 1 ? 'text-gray-300 bg-gray-50 cursor-not-allowed' : 'hover:bg-gray-50 text-gray-700'}`}
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setPurchasesPage(prev => Math.min(prev + 1, totalPurchasesPages))}
+                        disabled={purchasesPage === totalPurchasesPages}
+                        className={`px-3 py-1.5 border rounded-lg transition-all ${purchasesPage === totalPurchasesPages ? 'text-gray-300 bg-gray-50 cursor-not-allowed' : 'hover:bg-gray-50 text-gray-700'}`}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Expenses Tab */}
+            {activeTab === 'expenses' && (
+              <div>
+                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Detailed Expenses</h3>
+                    <p className="text-xs text-gray-400">Total amount in period: <span className="font-semibold text-red-600">{formatCurrency(totalExpenses)}</span></p>
+                  </div>
+                  <button
+                    onClick={() => setIsExpenseModalOpen(true)}
+                    className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 flex items-center font-medium shadow-sm transition-all"
+                  >
+                    <MdAdd className="mr-1 h-4 w-4" /> Add Expense
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-6 py-3">Date</th>
+                        <th className="px-6 py-3">Description</th>
+                        <th className="px-6 py-3">Category</th>
+                        <th className="px-6 py-3">Payment</th>
+                        <th className="px-6 py-3">Amount</th>
+                        <th className="px-6 py-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm text-gray-600">
+                      {paginatedExpenses.length > 0 ? (
+                        paginatedExpenses.map((expense) => (
+                          <tr key={expense._id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-6 py-3 text-xs text-gray-400">{new Date(expense.date).toLocaleDateString()}</td>
+                            <td className="px-6 py-3 font-medium text-gray-800">{expense.description}</td>
+                            <td className="px-6 py-3 capitalize">{expense.category ? expense.category.replace('_', ' ') : '—'}</td>
+                            <td className="px-6 py-3 capitalize">{expense.paymentMethod ? expense.paymentMethod.replace('_', ' ') : '—'}</td>
+                            <td className="px-6 py-3 font-semibold text-red-600">{formatCurrency(expense.amount)}</td>
+                            <td className="px-6 py-3 text-xs space-x-2">
+                              <button onClick={() => handleEditExpense(expense)} className="text-blue-600 hover:text-blue-800 mr-2">Edit</button>
+                              <button onClick={() => handleDeleteExpense(expense)} className="text-red-600 hover:text-red-800">Delete</button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="px-6 py-6 text-center text-gray-400">No expenses found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Expenses pagination controls */}
+                {expenses.length > itemsPerPage && (
+                  <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
+                    <div>
+                      Showing <span className="font-semibold">{startIndexExpenses + 1}</span> to <span className="font-semibold">{Math.min(startIndexExpenses + itemsPerPage, expenses.length)}</span> of <span className="font-semibold">{expenses.length}</span> entries
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => setExpensesPage(prev => Math.max(prev - 1, 1))}
+                        disabled={expensesPage === 1}
+                        className={`px-3 py-1.5 border rounded-lg transition-all ${expensesPage === 1 ? 'text-gray-300 bg-gray-50 cursor-not-allowed' : 'hover:bg-gray-50 text-gray-700'}`}
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setExpensesPage(prev => Math.min(prev + 1, totalExpensesPages))}
+                        disabled={expensesPage === totalExpensesPages}
+                        className={`px-3 py-1.5 border rounded-lg transition-all ${expensesPage === totalExpensesPages ? 'text-gray-300 bg-gray-50 cursor-not-allowed' : 'hover:bg-gray-50 text-gray-700'}`}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}

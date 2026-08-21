@@ -106,8 +106,8 @@ module.exports = {
         "99p": "99%",
       },
       fontFamily: {
-        poppins: ["Poppins", "sans-serif"],
-        dm: ["DM Sans", "sans-serif"],
+        poppins: ["Poppins", "-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "Roboto", "'Helvetica Neue'", "Arial", "sans-serif"],
+        dm: ["DM Sans", "-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "Roboto", "'Helvetica Neue'", "Arial", "sans-serif"],
       },
       boxShadow: {
         "3xl": "14px 17px 40px 4px",
